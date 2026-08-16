@@ -68,18 +68,22 @@ export const demandRequestsApi = {
     return response.json();
   },
 
-  checkoutDemand: async (id: string, successRedirectUrl: string, failureRedirectUrl: string) => {
-    const response = await apiClient(
-      `/demand-requests/${id}/checkout?success_redirect_url=${encodeURIComponent(successRedirectUrl)}&failure_redirect_url=${encodeURIComponent(failureRedirectUrl)}`,
-      {
-        method: 'POST',
-      }
-    );
+  checkoutDemand: async (id: string, successRedirectUrl: string, failureRedirectUrl: string, transactionId?: string) => {
+    let url = `/demand-requests/${id}/checkout?success_redirect_url=${encodeURIComponent(successRedirectUrl)}&failure_redirect_url=${encodeURIComponent(failureRedirectUrl)}`;
+    if (transactionId) {
+      url += `&transaction_id=${transactionId}`;
+    }
+    const response = await apiClient(url, {
+      method: 'POST',
+    });
     return response.json();
   },
 
-  confirmDemandReceived: async (id: string) => {
-    const response = await apiClient(`/demand-requests/${id}/confirm-received`, {
+  confirmDemandReceived: async (id: string, transactionId?: string) => {
+    const url = transactionId
+      ? `/demand-requests/${id}/confirm-received?transaction_id=${transactionId}`
+      : `/demand-requests/${id}/confirm-received`;
+    const response = await apiClient(url, {
       method: 'POST',
     });
     return response.json();
@@ -87,6 +91,13 @@ export const demandRequestsApi = {
 
   disputeDemand: async (id: string) => {
     const response = await apiClient(`/demand-requests/${id}/dispute`, {
+      method: 'POST',
+    });
+    return response.json();
+  },
+
+  cancelDemandTransaction: async (id: string, transactionId: string) => {
+    const response = await apiClient(`/demand-requests/${id}/transactions/${transactionId}/cancel`, {
       method: 'POST',
     });
     return response.json();

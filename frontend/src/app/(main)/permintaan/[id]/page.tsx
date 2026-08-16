@@ -129,8 +129,10 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [checkingOut, setCheckingOut] = useState(false);
-  const [confirmingReceived, setConfirmingReceived] = useState(false);
+  const [checkingOutTxId, setCheckingOutTxId] = useState<string | null>(null);
+  const [confirmingTxId, setConfirmingTxId] = useState<string | null>(null);
+  const [cancellingTxId, setCancellingTxId] = useState<string | null>(null);
+  const [confirmCancelTx, setConfirmCancelTx] = useState<any | null>(null);
   const [confirmMatchOpen, setConfirmMatchOpen] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState<any | null>(null);
   const [customMatchQty, setCustomMatchQty] = useState<number>(0);
@@ -261,33 +263,33 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
     const wsUrl = `${WS_BASE_URL}/ws/demand-requests/${id}`;
     const ws = new WebSocket(wsUrl);
 
-    ws.onmessage = (event) => {
+    ws.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
         if (
           data.quantity_kg_committed !== undefined ||
           data.payment_status !== undefined ||
-          data.escrow_status !== undefined
+          data.escrow_status !== undefined ||
+          data.status !== undefined
         ) {
+          try {
+            const freshData = await demandRequestsApi.getDemandRequestById(id);
+            if (freshData) {
+              setRequest(freshData);
+              return;
+            }
+          } catch (fetchErr) {
+            console.error("Failed to fetch fresh demand details on WS update:", fetchErr);
+          }
+
           setRequest((prev: any) => {
             if (!prev) return null;
-            const updated = {
+            return {
               ...prev,
               status: data.status !== undefined ? data.status : prev.status,
+              quantity_kg_committed: data.quantity_kg_committed !== undefined ? data.quantity_kg_committed : prev.quantity_kg_committed,
+              num_petani_committed: data.num_petani_committed !== undefined ? data.num_petani_committed : prev.num_petani_committed,
             };
-            if (data.quantity_kg_committed !== undefined) {
-              updated.quantity_kg_committed = data.quantity_kg_committed;
-            }
-            if (data.num_petani_committed !== undefined) {
-              updated.num_petani_committed = data.num_petani_committed !== undefined ? data.num_petani_committed : prev.num_petani_committed;
-            }
-            // Trigger background reload if payment or escrow status changed to fetch matching details
-            if (data.payment_status !== undefined || data.escrow_status !== undefined) {
-              demandRequestsApi.getDemandRequestById(id)
-                .then((freshData) => setRequest(freshData))
-                .catch((err) => console.error("Failed to reload demand details on WS update:", err));
-            }
-            return updated;
           });
         }
       } catch (err) {
@@ -365,13 +367,13 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
     await handleMatch(productId, customMatchQty);
   };
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (transactionId?: string) => {
     try {
-      setCheckingOut(true);
+      setCheckingOutTxId(transactionId || 'general');
       setError('');
       const successUrl = `${window.location.origin}/permintaan/${id}?status=success`;
       const failureUrl = `${window.location.origin}/permintaan/${id}?status=failed`;
-      const res = await demandRequestsApi.checkoutDemand(id, successUrl, failureUrl);
+      const res = await demandRequestsApi.checkoutDemand(id, successUrl, failureUrl, transactionId);
       if (res.invoice_url) {
         window.location.href = res.invoice_url;
       } else {
@@ -381,22 +383,75 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
       console.error(err);
       setError(err.message || 'Gagal memulai checkout pembayaran');
     } finally {
-      setCheckingOut(false);
+      setCheckingOutTxId(null);
     }
   };
 
-  const handleConfirmReceived = async () => {
+  const handleConfirmReceived = async (transactionId?: string) => {
     try {
-      setConfirmingReceived(true);
+      setConfirmingTxId(transactionId || 'general');
       setError('');
-      await demandRequestsApi.confirmDemandReceived(id);
+
+      // Optimistic state update so "Dana Dicairkan" appears instantly
+      if (transactionId) {
+        setRequest((prev: any) => {
+          if (!prev) return prev;
+          const updatedTxs = (prev.match_transactions || []).map((t: any) =>
+            t.id === transactionId ? { ...t, escrow_status: 'released' } : t
+          );
+          return { ...prev, match_transactions: updatedTxs };
+        });
+      }
+
+      await demandRequestsApi.confirmDemandReceived(id, transactionId);
       const updatedData = await demandRequestsApi.getDemandRequestById(id);
-      setRequest(updatedData);
+      if (updatedData) {
+        setRequest(updatedData);
+      }
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Gagal mengonfirmasi penerimaan barang');
+      // Rollback with fresh data if failed
+      const freshData = await demandRequestsApi.getDemandRequestById(id).catch(() => null);
+      if (freshData) setRequest(freshData);
     } finally {
-      setConfirmingReceived(false);
+      setConfirmingTxId(null);
+    }
+  };
+
+  const handleCancelTransaction = async () => {
+    if (!confirmCancelTx) return;
+    const txId = confirmCancelTx.id;
+    const txQty = confirmCancelTx.quantity_kg;
+    setConfirmCancelTx(null);
+    setCancellingTxId(txId);
+    setError('');
+    try {
+      // Optimistic UI update: remove transaction and reduce volume immediately
+      setRequest((prev: any) => {
+        if (!prev) return prev;
+        const updatedTxs = (prev.match_transactions || []).filter((t: any) => t.id !== txId);
+        const newCommitted = Math.max(0, (prev.quantity_kg_committed || 0) - txQty);
+        return {
+          ...prev,
+          match_transactions: updatedTxs,
+          quantity_kg_committed: newCommitted,
+          status: newCommitted < prev.quantity_kg_needed ? 'TERBUKA' : prev.status,
+        };
+      });
+
+      await demandRequestsApi.cancelDemandTransaction(id, txId);
+      const freshData = await demandRequestsApi.getDemandRequestById(id);
+      if (freshData) {
+        setRequest(freshData);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Gagal membatalkan transaksi');
+      const freshData = await demandRequestsApi.getDemandRequestById(id).catch(() => null);
+      if (freshData) setRequest(freshData);
+    } finally {
+      setCancellingTxId(null);
     }
   };
 
@@ -756,28 +811,39 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
                         {/* Action buttons */}
                         <div className="flex gap-2">
                           {isRequestBuyer && tx.payment_status !== 'paid' && (
-                            <Button
-                              disabled={checkingOut}
-                              onClick={handleCheckout}
-                              className="flex-1 bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-[10px] font-bold uppercase tracking-wider py-2 rounded-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                            >
-                              {checkingOut ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Bayar'}
-                            </Button>
+                            <>
+                              <Button
+                                disabled={checkingOutTxId === tx.id || cancellingTxId === tx.id}
+                                onClick={() => handleCheckout(tx.id)}
+                                className="flex-1 bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-[10px] font-bold uppercase tracking-wider py-2 rounded-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                              >
+                                {checkingOutTxId === tx.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Bayar'}
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                disabled={checkingOutTxId === tx.id || cancellingTxId === tx.id}
+                                onClick={() => setConfirmCancelTx(tx)}
+                                className="px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-wider rounded-sm transition-all cursor-pointer flex items-center justify-center gap-1"
+                              >
+                                {cancellingTxId === tx.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Batal'}
+                              </Button>
+                            </>
                           )}
                           {isRequestBuyer && tx.payment_status === 'paid' && tx.escrow_status === 'held' && (
                             <Button
-                              disabled={confirmingReceived}
-                              onClick={handleConfirmReceived}
-                              className="flex-1 bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-[10px] font-bold uppercase tracking-wider py-2 rounded-sm transition-all cursor-pointer"
+                              disabled={confirmingTxId === tx.id}
+                              onClick={() => handleConfirmReceived(tx.id)}
+                              className="flex-1 bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-[10px] font-bold uppercase tracking-wider py-2 rounded-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
                             >
-                              {confirmingReceived ? 'Memproses...' : 'Konfirmasi Diterima'}
+                              {confirmingTxId === tx.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Konfirmasi Diterima'}
                             </Button>
                           )}
                           {isRequestBuyer && tx.seller_id && (
                             <button
                               onClick={() => handleContactSeller(tx)}
                               disabled={chatLoading}
-                              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-sm border border-gr-line hover:border-gr-ink bg-white/40 hover:bg-white/60 font-mono text-[10px] font-bold uppercase tracking-wider text-gr-ink transition-all cursor-pointer disabled:opacity-50"
+                              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-sm border border-gr-line hover:border-gr-ink bg-white/40 hover:bg-white/60 font-mono text-[10px] font-bold uppercase tracking-wider text-gr-ink transition-all cursor-pointer disabled:opacity-50"
+                              title="Chat Petani/Peternak"
                             >
                               {chatLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageSquare className="h-3 w-3" />}
                               <span>Chat</span>
@@ -1195,6 +1261,40 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
                 <div className="flex justify-between">
                   <span className="text-gr-text-primary/60">VOL KEBUTUHAN:</span>
                   <span className="font-bold text-gr-text-primary">{request.quantity_kg_needed} KG</span>
+                </div>
+              </div>
+            </div>
+          }
+        />
+      )}
+
+      {confirmCancelTx && (
+        <ConfirmModal
+          isOpen={!!confirmCancelTx}
+          onClose={() => setConfirmCancelTx(null)}
+          onConfirm={handleCancelTransaction}
+          title="Batalkan Pencocokan"
+          confirmText="Ya, Batalkan"
+          cancelText="Kembali"
+          variant="danger"
+          isLoading={cancellingTxId === confirmCancelTx.id}
+          description={
+            <div className="space-y-2">
+              <p className="font-sans text-xs text-gr-ink-soft leading-relaxed">
+                Apakah Anda yakin ingin membatalkan transaksi pencocokan ini? Stok hasil panen petani sebesar <strong className="text-gr-ink font-mono">{confirmCancelTx.quantity_kg} KG</strong> akan dikembalikan secara otomatis.
+              </p>
+              <div className="bg-[#FAF9F5] border border-gr-line p-3 rounded-xs font-mono text-[10px] space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gr-text-primary/60">PETANI/PETERNAK:</span>
+                  <span className="font-bold text-gr-text-primary">{confirmCancelTx.seller_name || 'Petani'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gr-text-primary/60">VOLUME PEMBATALAN:</span>
+                  <span className="font-bold text-gr-text-primary">{confirmCancelTx.quantity_kg} KG</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gr-text-primary/60">TOTAL TAGIHAN:</span>
+                  <span className="font-bold text-gr-text-primary">Rp {Math.round(confirmCancelTx.amount).toLocaleString('id-ID')}</span>
                 </div>
               </div>
             </div>
