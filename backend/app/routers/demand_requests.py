@@ -624,11 +624,35 @@ async def commit_supply_to_demand(
         petani_id=current_user.id,
         quantity_kg_committed=body.quantity_kg
     )
-
     db.add(commitment)
+
+    # Create DemandTransaction for this commitment so buyer can pay via escrow
+    amount = body.quantity_kg * request.price_per_kg
+    dt = DemandTransaction(
+        id=uuid.uuid4(),
+        demand_request_id=id,
+        seller_id=current_user.id,
+        product_id=None,
+        quantity_kg=body.quantity_kg,
+        price_per_kg=request.price_per_kg,
+        amount=amount,
+        payment_status=PaymentStatus.PENDING,
+        escrow_status=EscrowStatus.NOT_STARTED,
+        xendit_external_id=f"permintaan_{id.hex}_{uuid.uuid4().hex[:6]}"
+    )
+    db.add(dt)
+
+    # Update request committed quantity & status
+    request.quantity_kg_committed = (request.quantity_kg_committed or 0.0) + body.quantity_kg
+    if request.quantity_kg_committed >= request.quantity_kg_needed:
+        request.status = DemandRequestStatus.TERPENUHI
+    else:
+        request.status = DemandRequestStatus.TERBUKA
+    db.add(request)
 
     await db.commit()
     await db.refresh(commitment)
+    await db.refresh(dt)
     await db.refresh(request)
 
     # Fetch distinct count of petani who committed
@@ -642,8 +666,11 @@ async def commit_supply_to_demand(
     await demand_manager.broadcast(
         str(id),
         {
+            "demand_request_id": str(id),
             "quantity_kg_committed": request.quantity_kg_committed,
             "status": request.status.value,
+            "payment_status": dt.payment_status.value,
+            "escrow_status": dt.escrow_status.value,
             "num_petani_committed": num_petani
         }
     )
@@ -677,10 +704,10 @@ async def get_demand_matching_candidates(
             detail="Hanya pembeli yang membuat permintaan yang dapat melihat kandidat"
         )
 
-    if req.status != DemandRequestStatus.TERBUKA:
+    if req.status not in (DemandRequestStatus.TERBUKA, DemandRequestStatus.TERPENUHI):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Permintaan sudah tidak terbuka untuk pencocokan"
+            detail="Permintaan sudah tidak aktif untuk pencocokan"
         )
 
     if req.embedding is None:
@@ -744,9 +771,8 @@ async def match_demand_request_with_seller(
     if req.buyer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Hanya pembeli yang membuat permintaan yang dapat mencocokkan")
 
-    # Check if already fully matched
-    if req.quantity_kg_committed >= req.quantity_kg_needed:
-        raise HTTPException(status_code=400, detail="Permintaan ini sudah terpenuhi")
+    if req.status not in (DemandRequestStatus.TERBUKA, DemandRequestStatus.TERPENUHI):
+        raise HTTPException(status_code=400, detail="Permintaan sudah tidak aktif untuk pencocokan")
 
     if req.embedding is None:
         raise HTTPException(
@@ -790,19 +816,17 @@ async def match_demand_request_with_seller(
 
     # Create DemandTransaction
     remaining_needed = max(0.0, req.quantity_kg_needed - req.quantity_kg_committed)
-    default_qty = min(product.quantity_kg, remaining_needed)
+    default_qty = min(product.quantity_kg, remaining_needed) if remaining_needed > 0 else min(product.quantity_kg, req.quantity_kg_needed)
     quantity_kg = default_qty
     if body.quantity_kg is not None:
         if body.quantity_kg <= 0:
             raise HTTPException(status_code=400, detail="Jumlah KG harus lebih besar dari 0")
         if body.quantity_kg > product.quantity_kg:
             raise HTTPException(status_code=400, detail="Jumlah KG tidak boleh melebihi stok produk yang tersedia")
-        if body.quantity_kg > remaining_needed:
-            raise HTTPException(status_code=400, detail="Jumlah KG tidak boleh melebihi sisa kebutuhan permintaan")
         quantity_kg = body.quantity_kg
 
     if quantity_kg <= 0:
-        raise HTTPException(status_code=400, detail="Permintaan ini sudah terpenuhi atau produk tidak memiliki stok")
+        raise HTTPException(status_code=400, detail="Jumlah KG yang dicocokkan harus lebih dari 0")
         
     amount = quantity_kg * product.price_per_kg
     
@@ -867,18 +891,22 @@ async def checkout_demand(
     id: uuid.UUID,
     success_redirect_url: str = Query(..., description="Frontend success redirect URL"),
     failure_redirect_url: str = Query(..., description="Frontend failure redirect URL"),
+    transaction_id: Optional[uuid.UUID] = Query(None, description="Optional specific DemandTransaction ID to checkout"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(auth_service.get_current_user)
 ):
     """
     Creates a Xendit Invoice for checkout of a matched demand request.
     """
-    # Fetch matched demand transaction (latest pending)
-    stmt = select(DemandTransaction).where(
+    # Fetch matched demand transaction (specific or latest pending)
+    query = select(DemandTransaction).where(
         DemandTransaction.demand_request_id == id,
         DemandTransaction.payment_status == PaymentStatus.PENDING
-    ).order_by(DemandTransaction.created_at.desc())
-    res = await db.execute(stmt)
+    )
+    if transaction_id:
+        query = query.where(DemandTransaction.id == transaction_id)
+    query = query.order_by(DemandTransaction.created_at.desc())
+    res = await db.execute(query)
     dt = res.scalars().first()
     if not dt:
         raise HTTPException(status_code=404, detail="Belum ada pencocokan transaksi untuk permintaan ini")
