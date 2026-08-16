@@ -1,0 +1,16 @@
+# Node.js
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# Python
+**/__pycache__/
+*.pyc
+backend/.env
+backend/.venv/
+backend/venv/
+backend/scratch/
+
+# IDE / Agent Customizations
+.agents/
+

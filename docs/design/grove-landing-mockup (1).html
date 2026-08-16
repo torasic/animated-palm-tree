@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Grove — mockup papan bursa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --gr-paper:#F2ECDD;
+  --gr-line: rgba(32,29,22,0.14);
+  --gr-ink:#201D16;
+  --gr-ink-soft:#5A5443;
+  --gr-board:#1B3A29;
+  --gr-chalk:#EDE6D1;
+  --gr-chalk-soft: rgba(237,230,209,0.62);
+  --gr-up:#2F6B3F;
+  --gr-down:#A6402A;
+  --gr-up-board:#8FD9A6;
+  --gr-down-board:#E8967D;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{background:var(--gr-paper);color:var(--gr-ink);font-family:'IBM Plex Sans',sans-serif;}
+.mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;}
+a{color:inherit;}
+
+.ticker{background:var(--gr-board);color:var(--gr-chalk);overflow:hidden;white-space:nowrap;border-bottom:1px solid rgba(237,230,209,0.15);margin-bottom:28px;}
+.ticker-track{display:inline-block;padding:9px 0;animation:scroll 26s linear infinite;}
+.ticker-item{display:inline-flex;align-items:center;gap:8px;margin-right:44px;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.03em;}
+.ticker-up{color:var(--gr-up-board);}
+.ticker-down{color:var(--gr-down-board);}
+@keyframes scroll{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+
+.masthead{max-width:1100px;margin:0 auto;padding:26px 32px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;}
+.wordmark{display:flex;align-items:center;gap:12px;}
+.seal{width:42px;height:42px;border-radius:50%;border:2px solid var(--gr-ink);display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-weight:700;font-size:18px;flex-shrink:0;}
+.wordmark-text{font-family:'Fraunces',serif;font-weight:600;font-size:22px;}
+.masthead-meta{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gr-ink-soft);text-align:center;}
+.masthead-right{display:flex;align-items:center;gap:14px;}
+.masthead-nav{display:flex;gap:30px;align-items:center;}
+.nav-tab{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--gr-ink-soft);text-decoration:none;padding-bottom:5px;border-bottom:2px solid transparent;cursor:pointer;transition:color .15s;}
+.nav-tab:hover{color:var(--gr-ink);}
+.nav-tab.active{color:var(--gr-ink);border-bottom-color:var(--gr-board);font-weight:600;}
+.btn{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.05em;text-transform:uppercase;padding:11px 20px;border-radius:2px;border:1.5px solid var(--gr-ink);background:transparent;color:var(--gr-ink);cursor:pointer;}
+.btn-primary{background:var(--gr-board);border-color:var(--gr-board);color:var(--gr-chalk);}
+
+.hero{max-width:1100px;margin:0 auto;padding:52px 32px 8px;text-align:center;}
+.eyebrow{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--gr-down);margin-bottom:18px;}
+h1{font-family:'Fraunces',Georgia,serif;font-size:clamp(3.2rem,10vw,6rem);font-weight:600;letter-spacing:-0.02em;line-height:0.95;margin:0 auto 24px;max-width:820px;color:var(--gr-ink);}
+h1 em{font-weight:300;font-style:italic;letter-spacing:0.005em;color:var(--gr-ink);}
+.subhead{font-family:'Fraunces',Georgia,serif;font-style:italic;font-weight:400;font-size:clamp(1.05rem,2.4vw,1.45rem);line-height:1.375;color:var(--gr-ink-soft);max-width:600px;margin:0 auto 20px;}
+.byline{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--gr-ink-soft);text-align:center;margin:0 0 32px;}
+.byline .dot{display:inline-block;width:3px;height:3px;background:var(--gr-ink-soft);border-radius:50%;margin:0 10px;vertical-align:middle;}
+.cta-row{display:flex;gap:14px;margin:0 auto 44px;justify-content:center;flex-wrap:wrap;}
+
+.quote-eyebrow{display:flex;align-items:center;gap:16px;justify-content:center;margin:0 auto 36px;max-width:900px;}
+.quote-eyebrow-line{flex:1;height:1px;background:var(--gr-line);}
+.quote-eyebrow-text{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gr-ink-soft);white-space:nowrap;}
+.quote-section{max-width:900px;margin:0 auto;padding:8px 32px 8px;}
+.quote{font-family:'Fraunces',Georgia,serif;font-style:italic;font-weight:300;font-size:34px;line-height:1.5;letter-spacing:0.005em;text-align:center;max-width:780px;margin:0 auto 34px;color:var(--gr-ink);}
+.quote-accent{font-family:'Fraunces',Georgia,serif;font-style:italic;font-weight:300;letter-spacing:0.005em;color:var(--gr-down);}
+.divider{display:flex;align-items:center;gap:14px;justify-content:center;max-width:280px;margin:0 auto 48px;}
+.divider-line{flex:1;height:1px;background:var(--gr-line);}
+.divider-mark{width:6px;height:6px;background:var(--gr-ink);transform:rotate(45deg);flex-shrink:0;}
+.fig-head{display:flex;justify-content:space-between;align-items:baseline;max-width:1036px;margin:0 auto 20px;padding:0 32px;flex-wrap:wrap;gap:8px;}
+.fig-label{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gr-down);}
+.fig-title{font-family:'Fraunces',serif;font-weight:600;font-size:21px;margin-left:10px;}
+.fig-note{font-family:'IBM Plex Sans',sans-serif;font-style:italic;font-size:12.5px;color:var(--gr-ink-soft);}
+.panels{max-width:1100px;margin:0 auto 64px;padding:0 32px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
+.panel{border:1px solid var(--gr-line);border-radius:2px;padding:20px 20px 22px;}
+.panel-tag{display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--gr-ink-soft);margin-bottom:14px;}
+.panel-swatch{width:9px;height:9px;flex-shrink:0;}
+.panel-value{font-family:'Fraunces',serif;font-weight:700;font-size:32px;color:var(--gr-ink);margin-bottom:2px;}
+.panel-value .unit{font-family:'IBM Plex Sans',sans-serif;font-weight:500;font-size:14px;color:var(--gr-ink-soft);margin-left:4px;}
+.panel-sub{font-family:'IBM Plex Sans',sans-serif;font-size:12px;margin-bottom:14px;}
+.panel svg{display:block;width:100%;height:58px;margin-bottom:14px;}
+.panel-desc{font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:1.55;color:var(--gr-ink-soft);}
+@media(max-width:760px){.panels{grid-template-columns:1fr;}}
+
+.board-panel{background:var(--gr-board);color:var(--gr-chalk);border-radius:4px;overflow:hidden;}
+.board-header{display:flex;justify-content:space-between;align-items:center;padding:14px 22px;border-bottom:1px solid rgba(237,230,209,.15);font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gr-chalk-soft);}
+.board-row{display:grid;grid-template-columns:1.5fr 1fr 0.9fr 0.9fr;align-items:center;padding:15px 22px;border-bottom:1px solid rgba(237,230,209,.08);font-family:'IBM Plex Mono',monospace;font-size:14px;}
+.board-row:last-child{border-bottom:none;}
+.board-commodity{font-family:'IBM Plex Sans',sans-serif;font-size:14px;}
+.board-delta{display:flex;align-items:center;gap:5px;font-size:13px;}
+.spark{display:block;}
+
+.rule-top{height:3px;background:var(--gr-ink);max-width:1100px;margin:0 auto;}
+.rule-top2{height:1px;background:var(--gr-ink);max-width:1100px;margin:3px auto 0;}
+.meta-row{max-width:1100px;margin:0 auto;padding:14px 32px 16px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px 20px;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gr-ink-soft);border-bottom:1px solid var(--gr-line);}
+
+.lede-section{max-width:1100px;margin:0 auto;padding:36px 32px 8px;display:grid;grid-template-columns:7fr 5fr;gap:48px;}
+.lede{font-family:'IBM Plex Sans',sans-serif;font-size:15.5px;line-height:1.8;color:var(--gr-ink-soft);margin:0;}
+.lede::first-letter{font-family:'Fraunces',serif;font-weight:600;font-style:italic;font-size:3.2em;float:left;line-height:.82;padding:.06em .1em 0 0;color:var(--gr-ink);}
+.howto{border-left:1px solid var(--gr-line);padding-left:32px;}
+.howto h2{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gr-ink-soft);margin:0 0 14px;font-weight:600;}
+.howto ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;}
+.howto li{display:flex;gap:10px;font-size:13px;line-height:1.6;color:var(--gr-ink-soft);}
+.howto .num{font-family:'Fraunces',serif;font-style:italic;font-weight:600;color:var(--gr-ink);flex-shrink:0;}
+@media(max-width:760px){.lede-section{grid-template-columns:1fr;}.howto{border-left:none;padding-left:0;border-top:1px solid var(--gr-line);padding-top:24px;margin-top:8px;}}
+
+.footer{border-top:3px solid var(--gr-ink);margin-top:8px;}
+.footer-grid{max-width:1100px;margin:0 auto;padding:40px 32px;display:grid;grid-template-columns:5fr 4fr 3fr;gap:32px;}
+.footer h3{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gr-ink-soft);margin:0 0 12px;}
+.footer p{font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:1.65;color:var(--gr-ink-soft);margin:0;}
+.footer a{color:var(--gr-ink);text-decoration:underline;text-decoration-color:var(--gr-line);text-underline-offset:2px;}
+@media(max-width:760px){.footer-grid{grid-template-columns:1fr;gap:24px;}}
+
+.entries{max-width:1100px;margin:60px auto 0;padding:0 32px 60px;border-top:2px solid var(--gr-ink);}
+.entries-label{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gr-ink-soft);padding-top:18px;}
+.entry{display:grid;grid-template-columns:52px 1fr;gap:20px;padding:26px 0;border-bottom:1px solid var(--gr-line);}
+.entry-mark{font-family:'Fraunces',serif;font-weight:700;font-size:26px;color:var(--gr-down);}
+.entry h3{font-family:'Fraunces',serif;font-weight:600;font-size:21px;margin:0 0 8px;}
+.entry p{margin:0;color:var(--gr-ink-soft);font-size:14.5px;line-height:1.65;max-width:580px;}
+.entry-theory{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--gr-down);margin-top:10px;display:inline-block;}
+
+@media(max-width:640px){h1{font-size:36px;}.board-row{grid-template-columns:1.3fr 1fr 0.8fr;}.board-row .spark{display:none;}}
+</style>
+</head>
+<body>
+
+<div class="ticker">
+  <div class="ticker-track">
+    <span class="ticker-item">CABAI RAWIT MERAH · Rp 42.500/kg <span class="ticker-up">▲ 2,3%</span></span>
+    <span class="ticker-item">BAWANG MERAH · Rp 28.100/kg <span class="ticker-down">▼ 1,8%</span></span>
+    <span class="ticker-item">GABAH KERING PANEN · Rp 6.200/kg <span class="ticker-up">▲ 0,5%</span></span>
+    <span class="ticker-item">TELUR AYAM RAS · Rp 27.800/kg <span class="ticker-down">▼ 0,9%</span></span>
+    <span class="ticker-item">JAGUNG PIPILAN · Rp 5.400/kg <span class="ticker-up">▲ 1,1%</span></span>
+    <span class="ticker-item">CABAI RAWIT MERAH · Rp 42.500/kg <span class="ticker-up">▲ 2,3%</span></span>
+    <span class="ticker-item">BAWANG MERAH · Rp 28.100/kg <span class="ticker-down">▼ 1,8%</span></span>
+    <span class="ticker-item">GABAH KERING PANEN · Rp 6.200/kg <span class="ticker-up">▲ 0,5%</span></span>
+    <span class="ticker-item">TELUR AYAM RAS · Rp 27.800/kg <span class="ticker-down">▼ 0,9%</span></span>
+    <span class="ticker-item">JAGUNG PIPILAN · Rp 5.400/kg <span class="ticker-up">▲ 1,1%</span></span>
+  </div>
+</div>
+
+<div class="rule-top"></div>
+<div class="rule-top2"></div>
+<div class="meta-row">
+  <span>Buletin harga pangan · Nº 214</span>
+  <span>Rantai pasok pangan pedesaan</span>
+  <span>PIHPS · 19 Juli 2026</span>
+</div>
+
+<div class="masthead" style="padding-top:20px;">
+  <div class="wordmark">
+    <div class="seal">G</div>
+    <div class="wordmark-text">Grove</div>
+  </div>
+  <nav class="masthead-nav">
+    <a class="nav-tab active">Beranda</a>
+    <a class="nav-tab">Harga Pasar</a>
+    <a class="nav-tab">Tren Harga</a>
+  </nav>
+  <div class="masthead-right">
+    <button class="btn">Masuk</button>
+  </div>
+</div>
+
+<div class="hero">
+  <div class="eyebrow">Rantai pasok pangan pedesaan</div>
+  <h1>Panen tanpa <em>tebakan</em>.</h1>
+  <p class="subhead">Harga langsung dari petani, dibaca sebagai pola — bukan angka yang berdiri sendiri.</p>
+  <div class="byline">Papan harga Grove<span class="dot"></span>Diperbarui 19 Juli 2026</div>
+  <div class="cta-row">
+    <button class="btn btn-primary">Jelajahi marketplace</button>
+    <button class="btn">Pasang sinyal demand</button>
+  </div>
+</div>
+
+<div class="lede-section">
+  <p class="lede">Setiap musim, pola yang sama berulang: petani menanam berdasarkan harga yang mereka lihat saat itu, bukan harga yang berlaku saat panen tiba berbulan-bulan kemudian. Karena hampir semua petani membaca sinyal yang sama, mereka menanam komoditas yang sama pula — dan saat panen tiba serentak, pasokan membanjir, harga jatuh, dan siklus dimulai lagi musim berikutnya. Ekonom menyebut ini Cobweb Theorem: bukan kegagalan siapapun secara individual, tapi jebakan struktural akibat keputusan yang selalu satu langkah di belakang informasi.</p>
+  <div class="howto">
+    <h2>Cara baca papan harga</h2>
+    <ul>
+      <li><span class="num">i.</span>Setiap panel adalah satu komoditas. Warnanya menandai arah — hijau naik, terracotta turun, abu stabil.</li>
+      <li><span class="num">ii.</span>Angka besar adalah harga hari ini. Grafik kecil melacak tren beberapa hari terakhir, titik terakhir ditandai garis putus-putus.</li>
+      <li><span class="num">iii.</span>Data diperbarui otomatis setiap hari dari acuan resmi PIHPS Bank Indonesia, bukan input manual.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="quote-section">
+  <div class="quote-eyebrow">
+    <span class="quote-eyebrow-line"></span>
+    <span class="quote-eyebrow-text">Kenapa harga pangan berulang jatuh</span>
+    <span class="quote-eyebrow-line"></span>
+  </div>
+  <p class="quote">&ldquo;Petani menanam berdasarkan harga musim lalu. Panen tiba serentak, dan harga jatuh sebelum siapapun sempat <span class="quote-accent">bertanya</span>.&rdquo;</p>
+  <div class="divider">
+    <span class="divider-line"></span>
+    <span class="divider-mark"></span>
+    <span class="divider-line"></span>
+  </div>
+</div>
+
+<div class="fig-head">
+  <div><span class="fig-label">Fig. 1</span><span class="fig-title">Papan harga hari ini</span></div>
+  <div class="fig-note">Diperbarui otomatis setiap hari dari PIHPS, Bank Indonesia</div>
+</div>
+<div class="panels">
+  <div class="panel">
+    <div class="panel-tag"><span class="panel-swatch" style="background:var(--gr-up)"></span>Cabai rawit merah</div>
+    <div class="panel-value">Rp 42.500<span class="unit">/kg</span></div>
+    <div class="panel-sub" style="color:var(--gr-up)">▲ naik 2,3% dari kemarin</div>
+    <svg viewBox="0 0 300 60" preserveAspectRatio="none"><path fill="var(--gr-up)" opacity="0.12" d="M0,45 L40,40 L80,42 L120,25 L160,30 L200,15 L240,20 L280,8 L300,8 L300,60 L0,60 Z"/><polyline points="0,45 40,40 80,42 120,25 160,30 200,15 240,20 280,8" fill="none" stroke="var(--gr-up)" stroke-width="2"/><line x1="280" y1="8" x2="280" y2="60" stroke="var(--gr-up)" stroke-dasharray="3,3" stroke-width="1"/><circle cx="280" cy="8" r="3" fill="var(--gr-up)"/></svg>
+    <p class="panel-desc">Naik tajam sejak akhir pekan lalu, sejalan dengan turunnya pasokan pascapanen di Jawa Barat.</p>
+  </div>
+  <div class="panel">
+    <div class="panel-tag"><span class="panel-swatch" style="background:var(--gr-down)"></span>Bawang merah</div>
+    <div class="panel-value">Rp 28.100<span class="unit">/kg</span></div>
+    <div class="panel-sub" style="color:var(--gr-down)">▼ turun 1,8% dari kemarin</div>
+    <svg viewBox="0 0 300 60" preserveAspectRatio="none"><path fill="var(--gr-down)" opacity="0.12" d="M0,8 L40,14 L80,12 L120,22 L160,20 L200,32 L240,28 L280,40 L300,40 L300,60 L0,60 Z"/><polyline points="0,8 40,14 80,12 120,22 160,20 200,32 240,28 280,40" fill="none" stroke="var(--gr-down)" stroke-width="2"/><line x1="280" y1="40" x2="280" y2="60" stroke="var(--gr-down)" stroke-dasharray="3,3" stroke-width="1"/><circle cx="280" cy="40" r="3" fill="var(--gr-down)"/></svg>
+    <p class="panel-desc">Melandai setelah panen serentak membanjiri pasar Brebes dan sekitarnya.</p>
+  </div>
+  <div class="panel">
+    <div class="panel-tag"><span class="panel-swatch" style="background:var(--gr-ink-soft)"></span>Gabah kering panen</div>
+    <div class="panel-value">Rp 6.200<span class="unit">/kg</span></div>
+    <div class="panel-sub" style="color:var(--gr-ink-soft)">± stabil, 0,1%</div>
+    <svg viewBox="0 0 300 60" preserveAspectRatio="none"><path fill="var(--gr-ink-soft)" opacity="0.12" d="M0,28 L40,26 L80,29 L120,24 L160,27 L200,25 L240,26 L280,24 L300,24 L300,60 L0,60 Z"/><polyline points="0,28 40,26 80,29 120,24 160,27 200,25 240,26 280,24" fill="none" stroke="var(--gr-ink-soft)" stroke-width="2"/><line x1="280" y1="24" x2="280" y2="60" stroke="var(--gr-ink-soft)" stroke-dasharray="3,3" stroke-width="1"/><circle cx="280" cy="24" r="3" fill="var(--gr-ink-soft)"/></svg>
+    <p class="panel-desc">Bertahan di kisaran yang sama selama dua minggu terakhir, sesuai musim tanam berjalan.</p>
+  </div>
+</div>
+
+<div class="entries">
+  <div class="entries-label">Bagaimana Grove memutus siklus harga</div>
+
+  <div class="entry">
+    <div class="entry-mark">A</div>
+    <div>
+      <h3>Sinyal permintaan, sebelum tanam</h3>
+      <p>Pembeli memasang kebutuhan sebelum musim tanam dimulai. Petani merespons permintaan nyata lewat kartu geser sederhana, bukan menebak dari harga musim lalu.</p>
+      <span class="entry-theory">Teori Cobweb · memutus lag informasi</span>
+    </div>
+  </div>
+
+  <div class="entry">
+    <div class="entry-mark">B</div>
+    <div>
+      <h3>Transparansi sesama petani</h3>
+      <p>Setiap sinyal demand menunjukkan progres langsung — berapa persen sudah terpenuhi, berapa petani sudah berkomitmen — agar keputusan tanam tidak lagi buta terhadap keputusan petani lain.</p>
+      <span class="entry-theory">Teori Cobweb · mencegah pasokan berlebih serentak</span>
+    </div>
+  </div>
+
+  <div class="entry">
+    <div class="entry-mark">C</div>
+    <div>
+      <h3>Harga sebagai pola, bukan snapshot</h3>
+      <p>Grafik tren historis dari data PIHPS Bank Indonesia membaca harga sebagai siklus musiman, bukan angka sesaat yang mudah menyesatkan keputusan.</p>
+      <span class="entry-theory">Teori Cobweb · konteks siklus harga</span>
+    </div>
+  </div>
+
+  <div class="entry">
+    <div class="entry-mark">D</div>
+    <div>
+      <h3>Harga wajar saat transaksi</h3>
+      <p>PriceGauge membandingkan harga tiap produk terhadap acuan nasional secara langsung, menutup celah informasi antara petani dan pembeli saat transaksi berlangsung.</p>
+      <span class="entry-theory">Asimetri informasi · Akerlof</span>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <div class="footer-grid">
+    <div>
+      <h3>Sumber</h3>
+      <p>Pusat Informasi Harga Pangan Strategis (PIHPS) Nasional, Bank Indonesia — <a href="#">bi.go.id/hargapangan</a>. Data diambil otomatis setiap hari lewat proses terjadwal, disimpan sebagai acuan harga per komoditas per wilayah.</p>
+    </div>
+    <div>
+      <h3>Metode</h3>
+      <p>Harga produk yang diunggah petani dicocokkan ke acuan PIHPS lewat pencarian kemiripan nama komoditas, lalu dibandingkan sebagai persentase selisih dari harga referensi nasional.</p>
+    </div>
+    <div>
+      <h3>Kolofon</h3>
+      <p>Ditulis dengan Fraunces &amp; IBM Plex. Dibangun untuk VETERNITYBERAKSI, sub-tema Rural Commerce &amp; Supply Chain.</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,405 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* New Color Tokens */
+  --color-gr-paper: var(--gr-paper);
+  --color-gr-ink: var(--gr-ink);
+  --color-gr-ink-soft: var(--gr-ink-soft);
+  --color-gr-board: var(--gr-board);
+  --color-gr-chalk: var(--gr-chalk);
+  --color-gr-chalk-soft: var(--gr-chalk-soft);
+  --color-gr-up: var(--gr-up);
+  --color-gr-down: var(--gr-down);
+  --color-gr-line: var(--gr-line);
+  --color-gr-up-board: #8FD9A6;
+  --color-gr-down-board: #E8967D;
+
+  /* Legacy mappings for components using old semantic tokens */
+  --color-gr-bg: var(--gr-bg);
+  --color-gr-bg-elevated: var(--gr-bg-elevated);
+  --color-gr-bg-paper: var(--gr-bg-paper);
+  --color-gr-text-primary: var(--gr-text-primary);
+  --color-gr-text-paper: var(--gr-text-paper);
+  --color-gr-green: var(--gr-green);
+  --color-gr-green-glow: var(--gr-green-glow);
+  --color-gr-red: var(--gr-red);
+  --color-gr-red-glow: var(--gr-red-glow);
+  --color-gr-live: var(--gr-live);
+  --color-gr-price-fair: var(--gr-price-fair);
+  --color-gr-price-warn: var(--gr-price-warn);
+  --color-gr-price-unfair: var(--gr-price-unfair);
+
+  /* Shorthand aliases */
+  --color-bg: var(--gr-bg);
+  --color-green: var(--gr-green);
+  --color-red: var(--gr-red);
+  --color-live: var(--gr-live);
+
+  --font-display: var(--font-display), Georgia, serif;
+  --font-sans: var(--font-sans), sans-serif;
+  --font-mono: var(--font-mono), monospace;
+
+  --color-background: var(--gr-bg);
+  --color-foreground: var(--gr-text-primary);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* New Color Tokens */
+  --gr-paper: #F2ECDD;       /* kanvas utama, ganti dari --gr-bg gelap */
+  --gr-ink: #201D16;         /* teks utama, ganti dari putih/off-white lama */
+  --gr-ink-soft: #5A5443;    /* teks sekunder/muted */
+  --gr-board: #1B3A29;       /* hijau tua struktural — dipakai di ticker, footer, panel data. BUKAN background utama halaman */
+  --gr-chalk: #EDE6D1;       /* teks di atas --gr-board */
+  --gr-chalk-soft: rgba(237, 230, 209, 0.62);
+  --gr-up: #2F6B3F;          /* indikator harga naik / status positif */
+  --gr-down: #A6402A;        /* indikator harga turun / aksen merek — GANTI TOTAL --gr-orange lama */
+  --gr-line: rgba(32, 29, 22, 0.14); /* border/divider halus, ganti border abu-abu lama */
+
+  /* Compatibility mappings to preserve semantic classes */
+  --gr-bg: var(--gr-paper);
+  --gr-bg-elevated: rgba(32, 29, 22, 0.04);
+  --gr-bg-paper: var(--gr-paper);
+  --gr-text-primary: var(--gr-ink);
+  --gr-text-paper: var(--gr-ink);
+  --gr-green: var(--gr-up);
+  --gr-green-glow: rgba(47, 107, 63, 0.2);
+  --gr-red: var(--gr-down);
+  --gr-red-glow: rgba(166, 64, 42, 0.2);
+  --gr-live: var(--gr-up);
+  --gr-price-fair: var(--gr-up);
+  --gr-price-warn: #D9A74A;
+  --gr-price-unfair: var(--gr-down);
+
+  --background: var(--gr-paper);
+  --foreground: var(--gr-ink);
+  --card: var(--gr-paper);
+  --card-foreground: var(--gr-ink);
+  --popover: var(--gr-paper);
+  --popover-foreground: var(--gr-ink);
+  --primary: var(--gr-board);
+  --primary-foreground: var(--gr-chalk);
+  --secondary: var(--gr-chalk);
+  --secondary-foreground: var(--gr-board);
+  --muted: var(--gr-chalk);
+  --muted-foreground: var(--gr-ink-soft);
+  --accent: var(--gr-chalk);
+  --accent-foreground: var(--gr-ink);
+  --destructive: var(--gr-down);
+  --border: var(--gr-line);
+  --input: var(--gr-line);
+  --ring: var(--gr-board);
+  --radius: 0.625rem;
+  --sidebar: var(--gr-paper);
+  --sidebar-foreground: var(--gr-ink);
+  --sidebar-primary: var(--gr-board);
+  --sidebar-primary-foreground: var(--gr-chalk);
+  --sidebar-accent: var(--gr-chalk);
+  --sidebar-accent-foreground: var(--gr-ink);
+  --sidebar-border: var(--gr-line);
+  --sidebar-ring: var(--gr-board);
+}
+
+.dark {
+  --gr-bg: hsl(232, 37%, 5%);
+  --gr-text-primary: #EDE8DC;
+  --gr-bg-elevated: rgba(237, 232, 220, 0.018);
+  --gr-bg-paper: #1E1812;
+  --gr-text-paper: #EDE8DC;
+  --gr-green: hsl(143, 100%, 68%);
+  --gr-green-glow: hsla(143, 100%, 68%, 0.28);
+  --gr-red: #FF6B6B;
+  --gr-red-glow: rgba(255, 107, 107, 0.28);
+  --gr-live: #4DFFC4;
+  --gr-price-fair: hsl(143, 100%, 68%);
+  --gr-price-warn: #FFD166;
+  --gr-price-unfair: #FF6B6B;
+  --gr-up: hsl(143, 100%, 68%);
+  --gr-down: #FF6B6B;
+  --gr-line: rgba(255, 255, 255, 0.1);
+
+  --background: var(--gr-bg);
+  --foreground: var(--gr-text-primary);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-gr-bg text-gr-text-primary font-sans antialiased;
+  }
+  html {
+    @apply font-sans;
+  }
+
+  /* Headline specific styling for font-display */
+  h1.font-display,
+  h2.font-display,
+  h3.font-display,
+  h4.font-display,
+  h5.font-display,
+  h6.font-display,
+  .font-display-headline {
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 0.95;
+  }
+
+  /* em tags inside headlines get custom light weight and italic style */
+  .font-display em,
+  h1 em,
+  h2 em,
+  h3 em {
+    font-weight: 300;
+    font-style: italic;
+    letter-spacing: 0.005em;
+  }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Leaflet zoom control: styled to match editorial paper/board theme ── */
+.leaflet-control-zoom a {
+  background-color: var(--gr-paper) !important;
+  backdrop-filter: blur(8px) !important;
+  color: var(--gr-ink) !important;
+  border-color: var(--gr-line) !important;
+  font-size: 18px !important;
+  line-height: 28px !important;
+  width: 32px !important;
+  height: 32px !important;
+  transition: all 0.2s ease !important;
+}
+.leaflet-control-zoom a:hover {
+  background-color: var(--gr-board) !important;
+  color: var(--gr-chalk) !important;
+}
+.leaflet-control-zoom-in {
+  border-radius: 10px 10px 0 0 !important;
+}
+.leaflet-control-zoom-out {
+  border-radius: 0 0 10px 10px !important;
+}
+
+
+/* ── Ticker marquee animation ──────────────────────────────────────────────── */
+/* Speed is intentionally slow and strictly linear — mechanical stock-ticker feel */
+@keyframes ticker-scroll {
+  0%   { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
+}
+
+.animate-ticker {
+  display: inline-block;
+  padding: 9px 0;
+  /* 40 s at strictly linear — no ease-in or ease-out  */
+  animation: ticker-scroll 40s linear infinite;
+  /* Pause on hover so the user can read a specific price */
+  will-change: transform;
+}
+
+.ticker-wrapper:hover .animate-ticker,
+.animate-ticker:hover {
+  animation-play-state: paused;
+}
+
+/* ── Editorial scroll-reveal primitives ─────────────────────────────────────── */
+/* Ink settling: slow fade + minimal vertical drift, no bounce */
+@keyframes grove-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Headline "type-developing": color transitions from muted → full ink */
+@keyframes grove-ink-develop {
+  from { color: var(--gr-ink-soft); }
+  to   { color: var(--gr-ink); }
+}
+
+/* Utility classes driven by JS (useScrollReveal hook) */
+.gr-reveal {
+  opacity: 0;
+  transform: translateY(6px);
+  /* no transition here — JS toggles .gr-reveal--visible */
+}
+
+.gr-reveal--visible {
+  animation: grove-fade-up 500ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Stagger helpers: siblings get progressively longer delay via CSS custom prop */
+.gr-stagger > * {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.gr-stagger--visible > *:nth-child(1) { animation: grove-fade-up 500ms cubic-bezier(0.4, 0, 0.2, 1) 0ms   forwards; }
+.gr-stagger--visible > *:nth-child(2) { animation: grove-fade-up 500ms cubic-bezier(0.4, 0, 0.2, 1) 160ms  forwards; }
+.gr-stagger--visible > *:nth-child(3) { animation: grove-fade-up 500ms cubic-bezier(0.4, 0, 0.2, 1) 320ms  forwards; }
+.gr-stagger--visible > *:nth-child(4) { animation: grove-fade-up 500ms cubic-bezier(0.4, 0, 0.2, 1) 480ms  forwards; }
+.gr-stagger--visible > *:nth-child(n+5) { animation: grove-fade-up 500ms cubic-bezier(0.4, 0, 0.2, 1) 620ms forwards; }
+
+/* Headline ink-develop */
+.gr-headline-develop {
+  color: var(--gr-ink-soft);
+}
+
+.gr-headline-develop--visible {
+  animation: grove-ink-develop 550ms cubic-bezier(0.4, 0, 0.2, 1) 100ms both;
+}
+
+/* ── Ink underline draw: left→right on hover ────────────────────────────────── */
+/* Apply .ink-link to any text link for the editorial underline-draw effect */
+.ink-link {
+  position: relative;
+  text-decoration: none;
+}
+
+.ink-link::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background-color: currentColor;
+  transition: width 280ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.ink-link:hover::after {
+  width: 100%;
+}
+
+/* ── Paper noise texture overlay ────────────────────────────────────────────── */
+/* A very subtle grain at 4% opacity — reinforces the print/paper feel          */
+/* Uses an SVG turbulence filter rendered to a data-URI; GPU-composited via     */
+/* position:fixed + pointer-events:none so it never captures interaction.       */
+.paper-grain::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
+}
+
+/* Custom subtle scrollbar for sidebar lists */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(32, 29, 22, 0.04);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(32, 29, 22, 0.18);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(32, 29, 22, 0.35);
+}
+
+/* ── Mode Aksesibilitas Petani (High Contrast & Enhanced Legibility) ── */
+:root.farmer-accessibility-mode,
+html.farmer-accessibility-mode {
+  font-size: 110% !important; /* Elegant 10% text scaling for enhanced legibility */
+  --gr-ink: #0A0907 !important;
+  --gr-ink-soft: #26221A !important;
+  --gr-line: rgba(10, 9, 7, 0.28) !important;
+}
+
+html.farmer-accessibility-mode body {
+  font-weight: 500 !important;
+}
+
+html.farmer-accessibility-mode button:focus-visible,
+html.farmer-accessibility-mode a:focus-visible,
+html.farmer-accessibility-mode input:focus-visible {
+  outline: 3px solid #1B3A29 !important;
+  outline-offset: 2px !important;
+}
+
