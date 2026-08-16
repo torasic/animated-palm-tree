@@ -484,6 +484,17 @@ async def get_demand_request_detail(
         )
     request, lat, lng = row
 
+    # Auto-reconcile status if inconsistency exists (self-healing for previously inconsistent rows)
+    if request.status not in (DemandRequestStatus.DIBATALKAN, DemandRequestStatus.KEDALUWARSA):
+        if request.quantity_kg_committed < request.quantity_kg_needed and request.status == DemandRequestStatus.TERPENUHI:
+            request.status = DemandRequestStatus.TERBUKA
+            db.add(request)
+            await db.commit()
+        elif request.quantity_kg_committed >= request.quantity_kg_needed and request.status == DemandRequestStatus.TERBUKA:
+            request.status = DemandRequestStatus.TERPENUHI
+            db.add(request)
+            await db.commit()
+
     # Fetch commitments
     stmt_commitments = select(SupplyCommitment).options(
         joinedload(SupplyCommitment.petani)
@@ -926,6 +937,7 @@ async def checkout_demand(
 @router.post("/{id}/confirm-received")
 async def confirm_demand_received(
     id: uuid.UUID,
+    transaction_id: Optional[uuid.UUID] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(auth_service.get_current_user)
 ):
@@ -933,15 +945,18 @@ async def confirm_demand_received(
     Confirm arrival of products and release escrow funds.
     """
     # Find transaction
-    stmt = select(DemandTransaction).where(
+    query = select(DemandTransaction).where(
         DemandTransaction.demand_request_id == id,
         DemandTransaction.payment_status == PaymentStatus.PAID,
         DemandTransaction.escrow_status == EscrowStatus.HELD
-    ).order_by(DemandTransaction.created_at.desc())
-    res = await db.execute(stmt)
+    )
+    if transaction_id:
+        query = query.where(DemandTransaction.id == transaction_id)
+    query = query.order_by(DemandTransaction.created_at.desc())
+    res = await db.execute(query)
     dt = res.scalars().first()
     if not dt:
-        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Transaksi yang sesuai tidak ditemukan atau dana sudah dicairkan")
 
     await escrow_service.confirm_received_and_release(
         db=db,
@@ -998,6 +1013,81 @@ async def disburse_demand_escrow(
         user_id=current_user.id
     )
     return {"status": "success"}
+
+
+@router.post("/{id}/transactions/{transaction_id}/cancel")
+async def cancel_demand_transaction(
+    id: uuid.UUID,
+    transaction_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user)
+):
+    """
+    Cancel a pending demand matching transaction, restore product stock, and reduce committed quantity.
+    """
+    stmt_req = select(DemandRequest).where(DemandRequest.id == id)
+    res_req = await db.execute(stmt_req)
+    req = res_req.scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="Permintaan tidak ditemukan")
+
+    if req.buyer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Hanya pembeli yang dapat membatalkan transaksi")
+
+    stmt_dt = select(DemandTransaction).where(
+        DemandTransaction.id == transaction_id,
+        DemandTransaction.demand_request_id == id
+    )
+    res_dt = await db.execute(stmt_dt)
+    dt = res_dt.scalar_one_or_none()
+    if not dt:
+        raise HTTPException(status_code=404, detail="Transaksi pencocokan tidak ditemukan")
+
+    if dt.payment_status == PaymentStatus.PAID:
+        raise HTTPException(
+            status_code=400,
+            detail="Transaksi yang sudah dibayar tidak dapat dibatalkan secara langsung."
+        )
+
+    # 1. Restore product stock if matched with a specific product
+    if dt.product_id:
+        stmt_prod = select(Product).where(Product.id == dt.product_id).with_for_update()
+        res_prod = await db.execute(stmt_prod)
+        prod = res_prod.scalar_one_or_none()
+        if prod:
+            prod.quantity_kg += dt.quantity_kg
+            if prod.status == ProductStatus.TERJUAL:
+                prod.status = ProductStatus.TERSEDIA
+            db.add(prod)
+
+    # 2. Reduce committed volume on the demand request
+    req.quantity_kg_committed = max(0.0, (req.quantity_kg_committed or 0.0) - dt.quantity_kg)
+    if req.status not in (DemandRequestStatus.DIBATALKAN, DemandRequestStatus.KEDALUWARSA):
+        if req.quantity_kg_committed < req.quantity_kg_needed:
+            req.status = DemandRequestStatus.TERBUKA
+        else:
+            req.status = DemandRequestStatus.TERPENUHI
+    db.add(req)
+
+    # 3. Delete the pending transaction
+    await db.delete(dt)
+    await db.commit()
+    await db.refresh(req)
+
+    # 4. Broadcast update via WebSocket
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    await demand_manager.broadcast(
+        str(id),
+        {
+            "demand_request_id": str(id),
+            "quantity_kg_committed": req.quantity_kg_committed,
+            "status": req.status.value,
+            "message": f"Transaksi pencocokan ({dt.quantity_kg} KG) telah dibatalkan.",
+            "timestamp": now.isoformat()
+        }
+    )
+
+    return {"status": "success", "message": "Transaksi berhasil dibatalkan", "quantity_kg_committed": req.quantity_kg_committed}
 
 
 @router.post("/{id}/cancel", response_model=DemandRequestResponse)
