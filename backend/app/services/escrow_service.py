@@ -209,12 +209,15 @@ class EscrowService:
                 dt.paid_at = now
                 db.add(dt)
 
-                # Set demand request to TERPENUHI if it was match-completed
+                # Update demand request status based on actual fulfillment progress
                 stmt_req = select(DemandRequest).where(DemandRequest.id == dt.demand_request_id)
                 res_req = await db.execute(stmt_req)
                 req = res_req.scalar_one_or_none()
                 if req:
-                    req.status = DemandRequestStatus.TERPENUHI
+                    if req.quantity_kg_committed >= req.quantity_kg_needed:
+                        req.status = DemandRequestStatus.TERPENUHI
+                    else:
+                        req.status = DemandRequestStatus.TERBUKA
                     db.add(req)
 
                 await db.commit()
@@ -225,7 +228,8 @@ class EscrowService:
                     str(dt.demand_request_id),
                     {
                         "demand_request_id": str(dt.demand_request_id),
-                        "status": req.status.value if req else "TERPENUHI",
+                        "status": req.status.value if req else "TERBUKA",
+                        "quantity_kg_committed": req.quantity_kg_committed if req else 0.0,
                         "payment_status": dt.payment_status.value,
                         "escrow_status": dt.escrow_status.value,
                         "message": "Pembayaran escrow penawaran berhasil. Dana ditahan.",
