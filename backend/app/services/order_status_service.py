@@ -124,6 +124,10 @@ async def reject_order(db: AsyncSession, order: Order, current_user: User) -> Or
     # Rollback stock and update status in one transaction
     await rollback_stock(db, order)
     
+    from app.models.payment_transaction import EscrowStatus
+    if order.escrow_status == EscrowStatus.HELD:
+        order.escrow_status = EscrowStatus.REFUNDED
+    
     order.status = OrderStatus.DIBATALKAN
     order.cancellation_reason = CancellationReason.PETANI_MENOLAK
     order.status_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -132,7 +136,8 @@ async def reject_order(db: AsyncSession, order: Order, current_user: User) -> Or
     await db.commit()
     await db.refresh(order)
     
-    await broadcast_status_change(order, "Pesanan ditolak oleh petani/peternak. Status: DIBATALKAN.")
+    msg = "Pesanan ditolak oleh petani/peternak. Status: DIBATALKAN. Dana dikembalikan ke pembeli." if order.escrow_status == EscrowStatus.REFUNDED else "Pesanan ditolak oleh petani/peternak. Status: DIBATALKAN."
+    await broadcast_status_change(order, msg)
     return order
 
 # Transition 3: Cancel by Buyer
@@ -154,6 +159,10 @@ async def cancel_order_by_buyer(db: AsyncSession, order: Order, current_user: Us
     # Rollback stock and update status in one transaction
     await rollback_stock(db, order)
     
+    from app.models.payment_transaction import EscrowStatus
+    if order.escrow_status == EscrowStatus.HELD:
+        order.escrow_status = EscrowStatus.REFUNDED
+    
     order.status = OrderStatus.DIBATALKAN
     order.cancellation_reason = CancellationReason.PEMBELI_BATAL
     order.status_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -162,7 +171,8 @@ async def cancel_order_by_buyer(db: AsyncSession, order: Order, current_user: Us
     await db.commit()
     await db.refresh(order)
     
-    await broadcast_status_change(order, "Pesanan dibatalkan oleh pembeli. Status: DIBATALKAN.")
+    msg = "Pesanan dibatalkan oleh pembeli. Status: DIBATALKAN. Dana dikembalikan ke pembeli." if order.escrow_status == EscrowStatus.REFUNDED else "Pesanan dibatalkan oleh pembeli. Status: DIBATALKAN."
+    await broadcast_status_change(order, msg)
     return order
 
 # Transition 4: Mark Order Ready (Farmer)
@@ -269,6 +279,10 @@ async def system_timeout_confirmation(db: AsyncSession, order: Order) -> Order:
         
     await rollback_stock(db, order)
     
+    from app.models.payment_transaction import EscrowStatus
+    if order.escrow_status == EscrowStatus.HELD:
+        order.escrow_status = EscrowStatus.REFUNDED
+    
     order.status = OrderStatus.DIBATALKAN
     order.cancellation_reason = CancellationReason.TIMEOUT_KONFIRMASI
     order.status_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -277,7 +291,8 @@ async def system_timeout_confirmation(db: AsyncSession, order: Order) -> Order:
     await db.commit()
     await db.refresh(order)
     
-    await broadcast_status_change(order, "Pesanan dibatalkan otomatis karena petani/peternak tidak merespons dalam 24 jam. Status: DIBATALKAN.")
+    msg = "Pesanan dibatalkan otomatis karena petani/peternak tidak merespons dalam 24 jam. Status: DIBATALKAN. Dana dikembalikan ke pembeli." if order.escrow_status == EscrowStatus.REFUNDED else "Pesanan dibatalkan otomatis karena petani/peternak tidak merespons dalam 24 jam. Status: DIBATALKAN."
+    await broadcast_status_change(order, msg)
     return order
 
 # Timeout 2: Pickup/Delivery Timeout

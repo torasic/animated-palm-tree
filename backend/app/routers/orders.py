@@ -444,8 +444,17 @@ async def confirm_order_success(
     if order.buyer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Hanya pembeli yang dapat mengonfirmasi keberhasilan transaksi")
     
-    from app.services import order_status_service
-    await order_status_service.confirm_received(db, order, current_user)
+    from app.models.payment_transaction import EscrowStatus
+    if order.escrow_status == EscrowStatus.HELD:
+        await escrow_service.confirm_received_and_release(
+            db=db,
+            source_type="pesanan",
+            source_id=order_id,
+            user_id=current_user.id
+        )
+    else:
+        from app.services import order_status_service
+        await order_status_service.confirm_received(db, order, current_user)
     
     return await get_full_order_response(db, order.id)
 

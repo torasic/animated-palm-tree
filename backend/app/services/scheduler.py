@@ -109,7 +109,10 @@ async def check_demand_match_timeouts():
                         req.status = DemandRequestStatus.TERBUKA
                     db.add(req)
                 
-                # 3. Expire transaction
+                # 3. Expire transaction & refund escrow if held
+                from app.models.payment_transaction import EscrowStatus
+                if tx.escrow_status == EscrowStatus.HELD:
+                    tx.escrow_status = EscrowStatus.REFUNDED
                 tx.payment_status = PaymentStatus.EXPIRED
                 db.add(tx)
                 
@@ -133,10 +136,50 @@ async def check_demand_match_timeouts():
                 print(f"Error processing demand transaction timeout for {tx.id}: {e}")
                 await db.rollback()
 
+async def check_expired_demand_requests():
+    """
+    Periodic job to check for open demand requests past their deadline
+    and automatically update their status to KEDALUWARSA.
+    """
+    async with AsyncSessionLocal() as db:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        from app.models.demand_request import DemandRequest, DemandRequestStatus
+        stmt = (
+            select(DemandRequest)
+            .where(
+                DemandRequest.status == DemandRequestStatus.TERBUKA,
+                DemandRequest.deadline < now
+            )
+        )
+        res = await db.execute(stmt)
+        expired_demands = res.scalars().all()
+
+        for demand in expired_demands:
+            try:
+                demand.status = DemandRequestStatus.KEDALUWARSA
+                db.add(demand)
+                await db.commit()
+
+                from app.routers.demand_requests import demand_manager
+                await demand_manager.broadcast(
+                    str(demand.id),
+                    {
+                        "demand_request_id": str(demand.id),
+                        "quantity_kg_committed": demand.quantity_kg_committed,
+                        "status": demand.status.value,
+                        "message": "Permintaan telah melewati tenggat waktu dan ditandai KEDALUWARSA.",
+                        "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+                    }
+                )
+            except Exception as e:
+                print(f"Error expiring demand request {demand.id}: {e}")
+                await db.rollback()
+
 def start_scheduler():
     scheduler.add_job(check_confirmation_timeouts, 'interval', seconds=30, id='check_confirmation_timeouts', replace_existing=True)
     scheduler.add_job(check_pickup_and_auto_confirm, 'interval', seconds=30, id='check_pickup_and_auto_confirm', replace_existing=True)
     scheduler.add_job(check_demand_match_timeouts, 'interval', seconds=30, id='check_demand_match_timeouts', replace_existing=True)
+    scheduler.add_job(check_expired_demand_requests, 'interval', minutes=1, id='check_expired_demand_requests', replace_existing=True)
     scheduler.start()
     print("APScheduler started successfully.")
 
