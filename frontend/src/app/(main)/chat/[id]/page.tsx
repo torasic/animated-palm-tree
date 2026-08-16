@@ -16,7 +16,12 @@ const formatMessageTime = (dateStr: string) => {
     safeStr = safeStr + 'Z';
   }
   try {
-    return new Date(safeStr).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    return new Date(safeStr).toLocaleTimeString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).replace(/\./g, ':');
   } catch (err) {
     return '';
   }

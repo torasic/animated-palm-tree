@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useConversations } from '@/hooks/useConversations';
 import { MessageCircle, User, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { parseUtcDate, formatWIBDate } from '@/lib/utils/date';
 
 export default function ChatLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -23,13 +24,14 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
 
   const formatTime = (dateStr: string) => {
     if (!dateStr) return '';
-    const d = new Date(dateStr);
+    const d = parseUtcDate(dateStr);
     const now = new Date();
-    if (d.toDateString() === now.toDateString()) {
-      return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const dWIB = d.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
+    const nowWIB = now.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
+    if (dWIB === nowWIB) {
+      return d.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\./g, ':');
     }
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agt', 'Sep', 'Okt', 'Nov', 'Des'];
-    return `${d.getDate()} ${months[d.getMonth()]}`;
+    return formatWIBDate(d, 'short');
   };
   // Lock page scrolling while chat is active to avoid buggy bouncing / double scrollbars
   useEffect(() => {

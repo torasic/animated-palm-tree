@@ -18,6 +18,7 @@ import { provinceCentroids } from '@/lib/data/province-centroids';
 import { RatingBadge } from '@/components/ratings/rating-badge';
 import { cn } from '@/lib/utils';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
+import { formatWIBDateTime, formatWIBDate } from '@/lib/utils/date';
 
 export default function DemandRequestDetailPage({ params }: { params: React.Usable<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -229,7 +230,14 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
 
   // Fetch candidates for matching
   useEffect(() => {
-    if (id && isRequestBuyer && request && request.status === 'TERBUKA') {
+    if (
+      id &&
+      isRequestBuyer &&
+      request &&
+      request.status !== 'DIBATALKAN' &&
+      request.status !== 'KEDALUWARSA' &&
+      request.quantity_kg_committed < request.quantity_kg_needed
+    ) {
       const fetchCandidates = async () => {
         try {
           setLoadingCandidates(true);
@@ -244,7 +252,7 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
       };
       fetchCandidates();
     }
-  }, [id, isRequestBuyer, request?.status]);
+  }, [id, isRequestBuyer, request?.status, request?.quantity_kg_committed, request?.quantity_kg_needed]);
 
   // 2. Connect to WebSocket for real-time updates
   useEffect(() => {
@@ -439,11 +447,7 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
   const progressPercent = Math.min(100, Math.round((committed / needed) * 100));
   const remainingKg = Math.max(0, needed - committed);
 
-  const formattedDeadline = new Date(request.deadline).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
+  const formattedDeadline = formatWIBDate(request.deadline);
 
   return (
     <main className="relative min-h-[calc(100vh-80px)] bg-gr-paper py-16 px-4 sm:px-6 lg:px-8">
@@ -639,7 +643,7 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
                   <div className="pt-5 border-t border-gr-line/35 pl-4 border-l-2 border-gr-board/15">
                     <div className="flex items-center gap-2 text-[10px] font-mono text-gr-ink-soft/60">
                       <span className="w-1.5 h-1.5 rounded-full bg-gr-up animate-pulse" />
-                      <span>Terakhir diperbarui: {new Date(request.updated_at || request.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} WIB</span>
+                      <span>Terakhir diperbarui: {formatWIBDateTime(request.updated_at || request.created_at)}</span>
                     </div>
                   </div>
                 </div>
@@ -797,9 +801,8 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
               );
             })()}
 
-            {request.status === 'TERBUKA' && request.quantity_kg_committed < request.quantity_kg_needed && (
-              request.status === 'TERBUKA' && (
-                    loadingCandidates ? (
+            {isRequestBuyer && request.quantity_kg_committed < request.quantity_kg_needed && request.status !== 'DIBATALKAN' && request.status !== 'KEDALUWARSA' && (
+              loadingCandidates ? (
                       <div className="rounded-sm border border-gr-line bg-white/80 p-6 overflow-hidden space-y-4">
                         {(request.match_transactions || []).length > 0 && (
                           <div className="bg-[#D9A74A]/10 border border-[#D9A74A]/30 rounded-sm px-3 py-2 font-mono text-[10px] text-[#7A5C1E] uppercase tracking-wider">
@@ -955,7 +958,6 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
                         })()}
                       </div>
                     )
-                  )
             )}
 
             {/* Farmer Commitment Action Panel */}
@@ -1022,12 +1024,7 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
               <div className="overflow-y-auto space-y-2 flex-1 pr-1 custom-scrollbar">
                 {request.commitments && request.commitments.length > 0 ? (
                   request.commitments.map((commit: any) => {
-                    const commitDate = new Date(commit.committed_at).toLocaleDateString('id-ID', {
-                      day: 'numeric',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    });
+                    const commitDate = formatWIBDateTime(commit.committed_at, false);
                     const isBuyer = user?.role === 'PEMBELI';
                     return (
                       <div 

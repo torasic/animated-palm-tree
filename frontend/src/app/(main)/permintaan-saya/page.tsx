@@ -10,6 +10,7 @@ import { Glow } from '@/components/effects/glow';
 import { Button } from '@/components/ui/button';
 import { Plus, Calendar, ClipboardList, Loader2, ArrowRight, Activity } from 'lucide-react';
 import Link from 'next/link';
+import { formatWIBDate } from '@/lib/utils/date';
 
 export default function PermintaanSayaPage() {
   const router = useRouter();
@@ -120,11 +121,7 @@ export default function PermintaanSayaPage() {
               const committed = req.quantity_kg_committed;
               const percent = Math.min(100, Math.round((committed / needed) * 100));
 
-              const deadlineDate = new Date(req.deadline).toLocaleDateString('id-ID', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric'
-              });
+              const deadlineDate = formatWIBDate(req.deadline, 'short');
 
               return (
                 <div 

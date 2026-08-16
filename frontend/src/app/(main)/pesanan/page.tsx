@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { Pagination } from '@/components/ui/pagination';
+import { formatWIBDate } from '@/lib/utils/date';
 
 function OrdersPageContent() {
   const router = useRouter();
@@ -631,11 +632,7 @@ function OrderCard({
     }
   };
 
-  const formattedDate = new Date(order.created_at).toLocaleDateString('id-ID', { 
-    day: 'numeric', 
-    month: 'long', 
-    year: 'numeric' 
-  });
+  const formattedDate = formatWIBDate(order.created_at);
 
   const contactName = isIncoming ? order.buyer_name : order.seller_name;
   const contactRoleLabel = isIncoming ? 'Pembeli' : 'Penjual/Petani/Peternak';
@@ -1063,11 +1060,7 @@ function DemandCard({
   const config = getStatusConfig(currentStatus, !!matchedTx);
   const StatusIcon = config.icon;
 
-  const formattedDate = new Date(demand.created_at).toLocaleDateString('id-ID', { 
-    day: 'numeric', 
-    month: 'long', 
-    year: 'numeric' 
-  });
+  const formattedDate = formatWIBDate(demand.created_at);
 
   const isBuyer = role === 'PEMBELI';
 

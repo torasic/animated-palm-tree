@@ -71,17 +71,15 @@ function TickerStrip({ items }: { items: TickerItem[] }) {
   );
 }
 
+import { formatWIBDate } from '@/lib/utils/date';
+
 // ─── Kicker bar ──────────────────────────────────────────────────────────────
 
 function KickerBar() {
   const today = new Date();
 
   const formatDateIndonesian = (date: Date) => {
-    const months = [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
-    ];
-    return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+    return formatWIBDate(date);
   };
 
   const getEditionNumber = () => {
