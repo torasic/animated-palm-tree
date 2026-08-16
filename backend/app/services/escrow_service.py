@@ -383,18 +383,32 @@ class EscrowService:
             else:
                 dt.disbursement_status = "pending_bank_details"
 
+            # Ensure demand_request status is reconciled based on actual fulfilled quota
+            if dt.demand_request and dt.demand_request.status not in (DemandRequestStatus.DIBATALKAN, DemandRequestStatus.KEDALUWARSA):
+                if dt.demand_request.quantity_kg_committed < dt.demand_request.quantity_kg_needed:
+                    dt.demand_request.status = DemandRequestStatus.TERBUKA
+                else:
+                    dt.demand_request.status = DemandRequestStatus.TERPENUHI
+                db.add(dt.demand_request)
+
+            # Extract broadcast values before db.commit expires relationships
+            demand_req_id_str = str(dt.demand_request_id)
+            req_status_val = dt.demand_request.status.value if dt.demand_request and dt.demand_request.status else "TERBUKA"
+            payment_status_val = dt.payment_status.value if dt.payment_status else "paid"
+            escrow_status_val = dt.escrow_status.value if dt.escrow_status else "released"
+
             db.add(dt)
             await db.commit()
             await db.refresh(dt)
 
             # Broadcast success via WebSocket
             await demand_manager.broadcast(
-                str(dt.demand_request_id),
+                demand_req_id_str,
                 {
-                    "demand_request_id": str(dt.demand_request_id),
-                    "status": dt.demand_request.status.value,
-                    "payment_status": dt.payment_status.value,
-                    "escrow_status": dt.escrow_status.value,
+                    "demand_request_id": demand_req_id_str,
+                    "status": req_status_val,
+                    "payment_status": payment_status_val,
+                    "escrow_status": escrow_status_val,
                     "message": "Barang dikonfirmasi diterima. Dana dicairkan ke petani/peternak.",
                     "timestamp": now.isoformat()
                 }
