@@ -17,6 +17,7 @@ import { Package, Clock, CheckCircle2, Truck, XCircle, Loader2, ShoppingBag, Cli
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
+import { ComplaintModal } from '@/components/orders/complaint-modal';
 import { Pagination } from '@/components/ui/pagination';
 import { formatWIBDate } from '@/lib/utils/date';
 
@@ -555,27 +556,20 @@ function OrderCard({
 
   // Complaint modal state
   const [showComplaintModal, setShowComplaintModal] = useState(false);
-  const [complaintReason, setComplaintReason] = useState('BARANG_RUSAK');
-  const [complaintDescription, setComplaintDescription] = useState('');
   const [isSubmittingComplaint, setIsSubmittingComplaint] = useState(false);
 
-  const handleFileComplaint = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!complaintDescription.trim()) {
-      alert('Harap isi penjelasan kendala komplain');
-      return;
-    }
+  const handleFileComplaint = async (data: { reason: string; description: string }) => {
     try {
       setIsSubmittingComplaint(true);
       await ordersApi.fileComplaint(order.id, {
-        reason: complaintReason,
-        description: complaintDescription.trim(),
+        reason: data.reason,
+        description: data.description,
       });
       setShowComplaintModal(false);
       onUpdate();
     } catch (err: any) {
       console.error('Failed to file complaint:', err);
-      alert(err.message || 'Gagal mengajukan komplain');
+      throw err;
     } finally {
       setIsSubmittingComplaint(false);
     }
@@ -1154,84 +1148,20 @@ function OrderCard({
       </button>
 
       {/* Modal Ajukan Komplain */}
-      {showComplaintModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="w-full max-w-md bg-white rounded-sm border border-gr-line p-6 shadow-xl space-y-4"
-          >
-            <div className="space-y-1">
-              <h3 className="font-display text-xl font-bold text-gr-ink flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-600" />
-                Ajukan Komplain Pesanan
-              </h3>
-              <p className="font-sans text-xs text-gr-ink-soft">
-                Sampaikan keluhan barang yang diterima untuk peninjauan sengketa oleh penengah/admin.
-              </p>
-            </div>
-
-            <form onSubmit={handleFileComplaint} className="space-y-4 pt-2">
-              <div className="space-y-1.5">
-                <label className="block font-mono text-xs font-bold uppercase tracking-wider text-gr-ink">
-                  Alasan Komplain
-                </label>
-                <select
-                  value={complaintReason}
-                  onChange={(e) => setComplaintReason(e.target.value)}
-                  className="w-full border border-gr-line rounded-sm p-2.5 text-xs font-sans bg-white focus:outline-none focus:border-gr-board"
-                >
-                  <option value="BARANG_RUSAK">Barang Rusak / Busuk / Cacat</option>
-                  <option value="TIDAK_SESUAI_DESKRIPSI">Tidak Sesuai Deskripsi / Varietas</option>
-                  <option value="KUALITAS_BURUK">Kualitas Buruk / Berat Kurang</option>
-                  <option value="LAINNYA">Lainnya</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block font-mono text-xs font-bold uppercase tracking-wider text-gr-ink">
-                  Detail Keluhan
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  value={complaintDescription}
-                  onChange={(e) => setComplaintDescription(e.target.value)}
-                  placeholder="Jelaskan permasalahan pesanan yang Anda terima secara rinci..."
-                  className="w-full border border-gr-line rounded-sm p-2.5 text-xs font-sans focus:outline-none focus:border-gr-board resize-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-gr-line">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setShowComplaintModal(false)}
-                  disabled={isSubmittingComplaint}
-                  className="border border-gr-line font-mono text-xs font-bold uppercase tracking-wider px-4 py-2 cursor-pointer"
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isSubmittingComplaint}
-                  className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs font-bold uppercase tracking-wider px-5 py-2 cursor-pointer flex items-center gap-2"
-                >
-                  {isSubmittingComplaint ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Mengirim...
-                    </>
-                  ) : (
-                    'Kirim Komplain'
-                  )}
-                </Button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
+      <ComplaintModal
+        isOpen={showComplaintModal}
+        onClose={() => setShowComplaintModal(false)}
+        onSubmit={handleFileComplaint}
+        order={{
+          id: order.id,
+          product_name: order.product_name,
+          quantity_kg: order.quantity_kg,
+          price_per_kg: order.price_per_kg,
+          total_price: order.total_price,
+          seller_name: order.seller_name,
+        }}
+        isLoading={isSubmittingComplaint}
+      />
     </motion.div>
   );
 }
