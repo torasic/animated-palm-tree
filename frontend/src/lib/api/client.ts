@@ -34,7 +34,7 @@ export async function apiClient(endpoint: string, options: RequestInit = {}) {
     });
 
     if (!response.ok) {
-      if (response.status === 401 && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/google')) {
+      if (response.status === 401 && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/google') && !endpoint.includes('/resolve-dispute')) {
         try {
           if (!refreshPromise) {
             refreshPromise = (async () => {

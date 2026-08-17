@@ -13,7 +13,7 @@ import { RatingForm } from '@/components/ratings/rating-form';
 import { BgPattern } from '@/components/effects/bg-pattern';
 import { RatingBadge } from '@/components/ratings/rating-badge';
 import { FilmGrain } from '@/components/effects/film-grain';
-import { Package, Clock, CheckCircle2, Truck, XCircle, Loader2, ShoppingBag, ClipboardList, Tag, Trash2, AlertTriangle, ShieldCheck, History, CreditCard, Banknote, User, Users, Edit, MessageSquare } from 'lucide-react';
+import { Package, Clock, CheckCircle2, Truck, XCircle, Loader2, ShoppingBag, ClipboardList, Tag, Trash2, AlertTriangle, ShieldCheck, ShieldAlert, History, CreditCard, Banknote, User, Users, Edit, MessageSquare, Key, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
