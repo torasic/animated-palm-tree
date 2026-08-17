@@ -129,7 +129,27 @@ async def test_order_escrow_lifecycle(mock_create_invoice, mock_create_disbursem
     db.add(order)
     await db.commit()
 
-    # 2. Checkout
+    # Verify checkout is rejected when unconfirmed (MENUNGGU_KONFIRMASI)
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc_unconfirmed:
+        await escrow_service.checkout_transaction(
+            db=db,
+            source_type="pesanan",
+            source_id=order.id,
+            buyer_email=buyer.email,
+            success_redirect_url="http://test.com/success",
+            failure_redirect_url="http://test.com/failure"
+        )
+    assert exc_unconfirmed.value.status_code == 400
+    assert "belum dikonfirmasi" in exc_unconfirmed.value.detail.lower()
+
+    # Farmer confirms/accepts the order -> DIPROSES
+    order.status = OrderStatus.DIPROSES
+    db.add(order)
+    await db.commit()
+    await db.refresh(order)
+
+    # 2. Checkout succeeds after order is confirmed
     invoice_url = await escrow_service.checkout_transaction(
         db=db,
         source_type="pesanan",
@@ -170,7 +190,7 @@ async def test_order_escrow_lifecycle(mock_create_invoice, mock_create_disbursem
     await escrow_service.confirm_received_and_release(db, "pesanan", order.id, buyer.id)
     await db.refresh(order)
     assert order.escrow_status == EscrowStatus.RELEASED
-    assert order.status == OrderStatus.DITERIMA
+    assert order.status == OrderStatus.SELESAI
     assert order.confirmed_received_at is not None
     assert order.disbursement_id == "disb-1111"
     assert order.disbursement_status == "pending"

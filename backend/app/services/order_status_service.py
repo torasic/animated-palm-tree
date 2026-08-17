@@ -189,6 +189,14 @@ async def mark_order_ready(db: AsyncSession, order: Order, current_user: User, t
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Status tujuan setelah DIPROSES harus SIAP_DIAMBIL atau DIKIRIM"
         )
+
+    # Validate payment status
+    from app.models.payment_transaction import PaymentStatus, EscrowStatus
+    if order.payment_status != PaymentStatus.PAID:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pesanan belum dibayar oleh pembeli. Pesanan harus dibayar sebelum ditandai siap diambil atau dikirim."
+        )
         
     # 2. Validate auth
     stmt = select(Product).where(Product.id == order.product_id)
@@ -232,32 +240,23 @@ async def confirm_received(db: AsyncSession, order: Order, current_user: User) -
             detail="Hanya pembeli yang dapat mengonfirmasi pesanan diterima"
         )
         
-    from app.models.payment_transaction import EscrowStatus
+    from app.models.payment_transaction import EscrowStatus, PaymentStatus
     
-    if order.escrow_status == EscrowStatus.HELD:
-        from app.services.escrow_service import escrow_service
-        # Delegate to escrow service to release funds to the seller (it sets status to DITERIMA, releases escrow, commits and broadcasts)
-        await escrow_service.confirm_received_and_release(
-            db=db,
-            source_type="pesanan",
-            source_id=order.id,
-            user_id=current_user.id
+    if order.payment_status != PaymentStatus.PAID or order.escrow_status != EscrowStatus.HELD:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pesanan belum dibayar. Pembeli tidak dapat mengonfirmasi penerimaan barang sebelum pembayaran lunas."
         )
-        await db.refresh(order)
-    else:
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-        
-        order.status = OrderStatus.DITERIMA
-        order.buyer_confirmed_at = now
-        order.received_at = now
-        order.status_updated_at = now
-        db.add(order)
-        
-        await db.commit()
-        await db.refresh(order)
-        
-        # Broadcast DITERIMA
-        await broadcast_status_change(order, "Pesanan dikonfirmasi diterima oleh pembeli. Status: DITERIMA.")
+    
+    from app.services.escrow_service import escrow_service
+    # Delegate to escrow service to release funds to the seller (it sets status to DITERIMA, releases escrow, commits and broadcasts)
+    await escrow_service.confirm_received_and_release(
+        db=db,
+        source_type="pesanan",
+        source_id=order.id,
+        user_id=current_user.id
+    )
+    await db.refresh(order)
     return order
 
 
@@ -330,15 +329,16 @@ async def system_auto_confirm_received(db: AsyncSession, order: Order) -> Order:
     else:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         
-        order.status = OrderStatus.DITERIMA
+        order.status = OrderStatus.SELESAI
         order.received_at = now
+        order.completed_at = now
         order.status_updated_at = now
         db.add(order)
         
         await db.commit()
         await db.refresh(order)
         
-        await broadcast_status_change(order, "Pesanan otomatis dikonfirmasi diterima oleh sistem. Status: DITERIMA.")
+        await broadcast_status_change(order, "Pesanan otomatis dikonfirmasi diterima oleh sistem. Status: SELESAI.")
     return order
 
 
@@ -358,7 +358,7 @@ async def file_complaint(
         )
         
     # 2. Validate order status
-    if order.status not in (OrderStatus.DITERIMA, OrderStatus.MASA_KOMPLAIN, OrderStatus.DIKIRIM, OrderStatus.SIAP_DIAMBIL):
+    if order.status not in (OrderStatus.SELESAI, OrderStatus.DITERIMA, OrderStatus.MASA_KOMPLAIN, OrderStatus.DIKIRIM, OrderStatus.SIAP_DIAMBIL):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Komplain tidak dapat diajukan untuk pesanan dengan status {order.status.value}"

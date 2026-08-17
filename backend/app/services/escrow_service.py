@@ -51,6 +51,18 @@ class EscrowService:
             if not order:
                 raise HTTPException(status_code=404, detail="Order tidak ditemukan")
             
+            if order.status == OrderStatus.MENUNGGU_KONFIRMASI:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Pesanan belum dikonfirmasi oleh petani/peternak. Pembayaran hanya dapat dilakukan setelah pesanan dikonfirmasi."
+                )
+
+            if order.status != OrderStatus.DIPROSES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Pesanan dalam status {order.status.value} tidak dapat dibayar."
+                )
+            
             stmt_product = select(Product).where(Product.id == order.product_id)
             res_product = await db.execute(stmt_product)
             product = res_product.scalar_one_or_none()
@@ -286,9 +298,10 @@ class EscrowService:
             order.escrow_status = EscrowStatus.RELEASED
             order.confirmed_received_at = now
             order.released_at = now
-            order.status = OrderStatus.DITERIMA
+            order.status = OrderStatus.SELESAI
             order.buyer_confirmed_at = now
             order.received_at = now
+            order.completed_at = now
             order.status_updated_at = now
 
             # Execute Xendit Disbursement (Cara 1)

@@ -462,17 +462,19 @@ async def confirm_order_success(
     if order.buyer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Hanya pembeli yang dapat mengonfirmasi keberhasilan transaksi")
     
-    from app.models.payment_transaction import EscrowStatus
-    if order.escrow_status == EscrowStatus.HELD:
-        await escrow_service.confirm_received_and_release(
-            db=db,
-            source_type="pesanan",
-            source_id=order_id,
-            user_id=current_user.id
+    from app.models.payment_transaction import EscrowStatus, PaymentStatus
+    if order.payment_status != PaymentStatus.PAID or order.escrow_status != EscrowStatus.HELD:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pesanan belum dibayar. Pembeli tidak dapat mengonfirmasi penerimaan barang sebelum pembayaran lunas."
         )
-    else:
-        from app.services import order_status_service
-        await order_status_service.confirm_received(db, order, current_user)
+
+    await escrow_service.confirm_received_and_release(
+        db=db,
+        source_type="pesanan",
+        source_id=order_id,
+        user_id=current_user.id
+    )
     
     return await get_full_order_response(db, order.id)
 
@@ -519,6 +521,18 @@ async def checkout_order(
 
     if order.buyer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Hanya pembeli order ini yang dapat melakukan checkout")
+
+    if order.status == OrderStatus.MENUNGGU_KONFIRMASI:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pesanan belum dikonfirmasi oleh petani/peternak. Pembayaran hanya dapat dilakukan setelah pesanan dikonfirmasi."
+        )
+
+    if order.status != OrderStatus.DIPROSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Pesanan dalam status {order.status.value} tidak dapat dibayar"
+        )
 
     # Call Escrow Service to process checkout
     invoice_url = await escrow_service.checkout_transaction(

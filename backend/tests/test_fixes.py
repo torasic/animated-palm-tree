@@ -183,11 +183,11 @@ async def test_confirm_order_success_releases_escrow(mock_create_disbursement, t
 
     assert res.status_code == 200
     res_data = res.json()
-    assert res_data["status"] == OrderStatus.DITERIMA.value
+    assert res_data["status"] == OrderStatus.SELESAI.value
     assert res_data["escrow_status"] == EscrowStatus.RELEASED.value
 
     await db.refresh(order)
-    assert order.status == OrderStatus.DITERIMA
+    assert order.status == OrderStatus.SELESAI
     assert order.escrow_status == EscrowStatus.RELEASED
     assert order.disbursement_id == "disb-9999"
 
@@ -324,15 +324,19 @@ async def test_rating_validation_only_selesai_allowed(test_fixes_context):
     app.dependency_overrides[auth_service.get_current_user] = lambda: buyer
 
     async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
-        # A. At status DITERIMA -> must be rejected with 400
-        res_diterima = await ac.post("/ratings", json={
+        # A. At status SIAP_DIAMBIL -> must be rejected with 400
+        order.status = OrderStatus.SIAP_DIAMBIL
+        db.add(order)
+        await db.commit()
+
+        res_siap = await ac.post("/ratings", json={
             "transaction_type": "PRODUCT_PURCHASE",
             "reference_id": str(order.id),
             "score": 5,
-            "comment": "Bagus saat diterima"
+            "comment": "Bagus saat siap diambil"
         })
-        assert res_diterima.status_code == 400
-        assert "Rating hanya dapat diberikan setelah transaksi benar-benar selesai." in res_diterima.json()["detail"]
+        assert res_siap.status_code == 400
+        assert "Rating hanya dapat diberikan setelah transaksi benar-benar selesai." in res_siap.json()["detail"]
 
         # B. At status KOMPLAIN_DIPROSES -> must be rejected with 400
         order.status = OrderStatus.KOMPLAIN_DIPROSES

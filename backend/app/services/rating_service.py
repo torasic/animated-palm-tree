@@ -32,9 +32,17 @@ async def create_rating(
         if order.buyer_id != rater_id:
             raise HTTPException(status_code=403, detail="Hanya pembeli yang dapat memberi rating untuk transaksi ini")
         
-        # Verify order status is SELESAI
-        if order.status != OrderStatus.SELESAI:
+        # Verify order status is SELESAI or DITERIMA
+        if order.status not in (OrderStatus.SELESAI, OrderStatus.DITERIMA):
             raise HTTPException(status_code=400, detail="Rating hanya dapat diberikan setelah transaksi benar-benar selesai.")
+
+        if order.status == OrderStatus.DITERIMA:
+            from datetime import timezone
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            order.status = OrderStatus.SELESAI
+            order.completed_at = order.completed_at or now
+            order.status_updated_at = now
+            db.add(order)
 
         # Get product to find seller
         stmt_prod = select(Product).where(Product.id == order.product_id)

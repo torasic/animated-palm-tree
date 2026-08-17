@@ -10,7 +10,7 @@ from app.config import settings
 from app.models.user import User, UserRole
 from app.models.product import Product, ProductStatus
 from app.models.order import Order, OrderStatus, CancellationReason, ComplaintReason
-from app.services import order_status_service
+from app.services import order_status_service, scheduler
 
 import pytest_asyncio
 
@@ -82,13 +82,25 @@ async def test_context():
                 await db.rollback()
             await db.close()
 
-async def create_test_order(db, product, buyer, quantity_kg=10.0, initial_status=OrderStatus.MENUNGGU_KONFIRMASI):
+from app.models.payment_transaction import PaymentStatus, EscrowStatus
+
+async def create_test_order(
+    db, 
+    product, 
+    buyer, 
+    quantity_kg=10.0, 
+    initial_status=OrderStatus.MENUNGGU_KONFIRMASI,
+    payment_status=PaymentStatus.PENDING,
+    escrow_status=EscrowStatus.NOT_STARTED
+):
     order = Order(
         id=uuid.uuid4(),
         product_id=product.id,
         buyer_id=buyer.id,
         quantity_kg=quantity_kg,
         status=initial_status,
+        payment_status=payment_status,
+        escrow_status=escrow_status,
         created_at=datetime.now(timezone.utc).replace(tzinfo=None)
     )
     # Deduct product stock initially
@@ -113,14 +125,47 @@ async def test_valid_order_flow_pickup(test_context):
     order = await order_status_service.accept_order(db, order, seller)
     assert order.status == OrderStatus.DIPROSES
     
+    # Simulate payment completion
+    order.payment_status = PaymentStatus.PAID
+    order.escrow_status = EscrowStatus.HELD
+    db.add(order)
+    await db.commit()
+    await db.refresh(order)
+    
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.SIAP_DIAMBIL)
     assert order.status == OrderStatus.SIAP_DIAMBIL
     assert order.marked_ready_at is not None
     
     order = await order_status_service.confirm_received(db, order, buyer)
-    assert order.status == OrderStatus.DITERIMA
+    assert order.status == OrderStatus.SELESAI
     assert order.buyer_confirmed_at is not None
     assert order.received_at is not None
+
+async def test_farmer_cannot_mark_ready_if_unpaid(test_context):
+    db, buyer, seller, product = test_context
+    order = await create_test_order(db, product, buyer, quantity_kg=10.0)
+    order = await order_status_service.accept_order(db, order, seller)
+    assert order.status == OrderStatus.DIPROSES
+    assert order.payment_status == PaymentStatus.PENDING
+
+    with pytest.raises(HTTPException) as excinfo:
+        await order_status_service.mark_order_ready(db, order, seller, OrderStatus.SIAP_DIAMBIL)
+    assert excinfo.value.status_code == 400
+    assert "belum dibayar" in excinfo.value.detail.lower()
+
+async def test_buyer_cannot_confirm_received_if_unpaid(test_context):
+    db, buyer, seller, product = test_context
+    order = await create_test_order(db, product, buyer, quantity_kg=10.0)
+    order.status = OrderStatus.SIAP_DIAMBIL
+    order.payment_status = PaymentStatus.PENDING
+    db.add(order)
+    await db.commit()
+    await db.refresh(order)
+
+    with pytest.raises(HTTPException) as excinfo:
+        await order_status_service.confirm_received(db, order, buyer)
+    assert excinfo.value.status_code == 400
+    assert "belum dibayar" in excinfo.value.detail.lower()
 
 async def test_farmer_reject_flow_and_rollback(test_context):
     db, buyer, seller, product = test_context
@@ -199,7 +244,7 @@ async def test_timeout_pickup_job(test_context):
     product_before = res_p.scalar_one()
     stock_before = product_before.quantity_kg
     
-    order = await create_test_order(db, product, buyer, quantity_kg=10.0)
+    order = await create_test_order(db, product, buyer, quantity_kg=10.0, payment_status=PaymentStatus.PAID, escrow_status=EscrowStatus.HELD)
     order = await order_status_service.accept_order(db, order, seller)
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.SIAP_DIAMBIL)
     
@@ -220,7 +265,7 @@ async def test_timeout_pickup_job(test_context):
 
 async def test_timeout_auto_confirm_received_job(test_context):
     db, buyer, seller, product = test_context
-    order = await create_test_order(db, product, buyer, quantity_kg=5.0)
+    order = await create_test_order(db, product, buyer, quantity_kg=5.0, payment_status=PaymentStatus.PAID, escrow_status=EscrowStatus.HELD)
     order = await order_status_service.accept_order(db, order, seller)
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.DIKIRIM)
     
@@ -231,45 +276,25 @@ async def test_timeout_auto_confirm_received_job(test_context):
     
     from app.services import scheduler
     await scheduler.check_pickup_and_auto_confirm()
-    
+        
     await db.refresh(order)
-    assert order.status == OrderStatus.DITERIMA
+    assert order.status == OrderStatus.SELESAI
     assert order.received_at is not None
 
 async def test_buyer_rating_after_received(test_context):
     db, buyer, seller, product = test_context
-    order = await create_test_order(db, product, buyer, quantity_kg=5.0)
+    order = await create_test_order(db, product, buyer, quantity_kg=5.0, payment_status=PaymentStatus.PAID, escrow_status=EscrowStatus.HELD)
     order = await order_status_service.accept_order(db, order, seller)
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.DIKIRIM)
     order = await order_status_service.confirm_received(db, order, buyer)
     
-    assert order.status == OrderStatus.DITERIMA
+    assert order.status == OrderStatus.SELESAI
     
     from fastapi import HTTPException
     from app.services.rating_service import create_rating
     from app.models.rating import TransactionType
     
-    # 1. Rating while status is still DITERIMA MUST fail with 400
-    with pytest.raises(HTTPException) as exc_info:
-        await create_rating(
-            db=db,
-            rater_id=buyer.id,
-            transaction_type=TransactionType.PRODUCT_PURCHASE,
-            reference_id=order.id,
-            score=5,
-            comment="Bagus sekali!"
-        )
-    assert exc_info.value.status_code == 400
-    assert "Rating hanya dapat diberikan setelah transaksi benar-benar selesai." in exc_info.value.detail
-
-    # 2. Advance order to SELESAI (e.g., after complaint timeout or completed)
-    order.status = OrderStatus.SELESAI
-    order.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    db.add(order)
-    await db.commit()
-    await db.refresh(order)
-
-    # 3. Rating after status is SELESAI MUST succeed
+    # Rating after status is SELESAI MUST succeed directly
     rating = await create_rating(
         db=db,
         rater_id=buyer.id,
@@ -283,15 +308,11 @@ async def test_buyer_rating_after_received(test_context):
 
 async def test_timeout_pickup_with_refund(test_context):
     db, buyer, seller, product = test_context
-    from app.models.payment_transaction import EscrowStatus
-    from app.services import scheduler
-    
-    order = await create_test_order(db, product, buyer, quantity_kg=10.0)
+    order = await create_test_order(db, product, buyer, quantity_kg=10.0, payment_status=PaymentStatus.PAID, escrow_status=EscrowStatus.HELD)
     order = await order_status_service.accept_order(db, order, seller)
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.SIAP_DIAMBIL)
     
     # Simulate payment success (escrow status HELD)
-    order.escrow_status = EscrowStatus.HELD
     order.marked_ready_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=settings.TIMEOUT_PENGAMBILAN + 10)
     db.add(order)
     await db.commit()
@@ -308,14 +329,11 @@ async def test_timeout_pickup_with_refund(test_context):
 async def test_timeout_auto_confirm_with_escrow_release(test_context):
     db, buyer, seller, product = test_context
     from app.models.payment_transaction import EscrowStatus
-    from app.services import scheduler
     
-    order = await create_test_order(db, product, buyer, quantity_kg=10.0)
+    order = await create_test_order(db, product, buyer, quantity_kg=10.0, payment_status=PaymentStatus.PAID, escrow_status=EscrowStatus.HELD)
     order = await order_status_service.accept_order(db, order, seller)
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.DIKIRIM)
     
-    # Simulate payment success (escrow status HELD)
-    order.escrow_status = EscrowStatus.HELD
     order.marked_ready_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=settings.TIMEOUT_AUTO_CONFIRM + 10)
     db.add(order)
     await db.commit()
@@ -325,7 +343,7 @@ async def test_timeout_auto_confirm_with_escrow_release(test_context):
     await scheduler.check_pickup_and_auto_confirm()
     
     await db.refresh(order)
-    assert order.status == OrderStatus.DITERIMA
+    assert order.status == OrderStatus.SELESAI
     assert order.escrow_status == EscrowStatus.RELEASED
     assert order.disbursement_status == "pending_bank_details"
 
@@ -333,21 +351,15 @@ async def test_confirm_success_with_escrow_release(test_context):
     db, buyer, seller, product = test_context
     from app.models.payment_transaction import EscrowStatus
     
-    order = await create_test_order(db, product, buyer, quantity_kg=10.0)
+    order = await create_test_order(db, product, buyer, quantity_kg=10.0, payment_status=PaymentStatus.PAID, escrow_status=EscrowStatus.HELD)
     order = await order_status_service.accept_order(db, order, seller)
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.DIKIRIM)
-    
-    # Simulate payment success (escrow status HELD)
-    order.escrow_status = EscrowStatus.HELD
-    db.add(order)
-    await db.commit()
-    await db.refresh(order)
     
     # Call order_status_service.confirm_received
     await order_status_service.confirm_received(db, order, buyer)
     
     await db.refresh(order)
-    assert order.status == OrderStatus.DITERIMA
+    assert order.status == OrderStatus.SELESAI
     assert order.escrow_status == EscrowStatus.RELEASED
     assert order.disbursement_status == "pending_bank_details"
 
@@ -356,15 +368,13 @@ async def test_file_complaint_lifecycle(test_context):
     from app.models.payment_transaction import EscrowStatus
     from app.models.order import ComplaintReason
     
-    order = await create_test_order(db, product, buyer, quantity_kg=10.0)
+    order = await create_test_order(db, product, buyer, quantity_kg=10.0, payment_status=PaymentStatus.PAID, escrow_status=EscrowStatus.HELD)
     order = await order_status_service.accept_order(db, order, seller)
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.DIKIRIM)
     
-    # Simulate payment success and receipt
-    order.escrow_status = EscrowStatus.HELD
     await order_status_service.confirm_received(db, order, buyer)
     await db.refresh(order)
-    assert order.status == OrderStatus.DITERIMA
+    assert order.status == OrderStatus.SELESAI
     
     # Call order_status_service.file_complaint from DITERIMA
     await order_status_service.file_complaint(
@@ -386,10 +396,9 @@ async def test_dispute_resolution_release_seller(test_context):
     from app.models.payment_transaction import EscrowStatus
     from app.models.order import ComplaintReason
     
-    order = await create_test_order(db, product, buyer, quantity_kg=10.0)
+    order = await create_test_order(db, product, buyer, quantity_kg=10.0, payment_status=PaymentStatus.PAID, escrow_status=EscrowStatus.HELD)
     order = await order_status_service.accept_order(db, order, seller)
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.DIKIRIM)
-    order.escrow_status = EscrowStatus.HELD
     await order_status_service.confirm_received(db, order, buyer)
     
     # File complaint
@@ -421,10 +430,9 @@ async def test_dispute_resolution_refund_buyer_escrow_held(test_context):
     from app.models.payment_transaction import EscrowStatus
     from app.models.order import ComplaintReason
     
-    order = await create_test_order(db, product, buyer, quantity_kg=10.0)
+    order = await create_test_order(db, product, buyer, quantity_kg=10.0, payment_status=PaymentStatus.PAID, escrow_status=EscrowStatus.HELD)
     order = await order_status_service.accept_order(db, order, seller)
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.DIKIRIM)
-    order.escrow_status = EscrowStatus.HELD
     
     # File complaint directly before confirming receipt
     await order_status_service.file_complaint(
@@ -456,16 +464,15 @@ async def test_dispute_resolution_refund_buyer_escrow_already_released(test_cont
     from app.models.payment_transaction import EscrowStatus
     from app.models.order import ComplaintReason
     
-    order = await create_test_order(db, product, buyer, quantity_kg=10.0)
+    order = await create_test_order(db, product, buyer, quantity_kg=10.0, payment_status=PaymentStatus.PAID, escrow_status=EscrowStatus.HELD)
     order = await order_status_service.accept_order(db, order, seller)
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.DIKIRIM)
-    order.escrow_status = EscrowStatus.HELD
     
-    # Buyer confirmed -> status DITERIMA, escrow RELEASED
+    # Buyer confirmed -> status SELESAI, escrow RELEASED
     await order_status_service.confirm_received(db, order, buyer)
     await db.refresh(order)
     assert order.escrow_status == EscrowStatus.RELEASED
-    assert order.status == OrderStatus.DITERIMA
+    assert order.status == OrderStatus.SELESAI
     
     # Buyer files complaint within window
     await order_status_service.file_complaint(
@@ -505,15 +512,11 @@ async def test_resolve_dispute_invalid_status_rejected(test_context):
 
 async def test_complaint_timeout_auto_complete(test_context):
     db, buyer, seller, product = test_context
-    order = await create_test_order(db, product, buyer, quantity_kg=5.0)
+    order = await create_test_order(db, product, buyer, quantity_kg=5.0, payment_status=PaymentStatus.PAID, escrow_status=EscrowStatus.HELD)
     order = await order_status_service.accept_order(db, order, seller)
     order = await order_status_service.mark_order_ready(db, order, seller, OrderStatus.DIKIRIM)
-    await order_status_service.confirm_received(db, order, buyer)
-    
-    await db.refresh(order)
-    assert order.status == OrderStatus.DITERIMA
-    
-    # Simulate past TIMEOUT_KOMPLAIN
+    # Set status to DITERIMA for testing timeout completion
+    order.status = OrderStatus.DITERIMA
     order.received_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=settings.TIMEOUT_KOMPLAIN + 10)
     db.add(order)
     await db.commit()
