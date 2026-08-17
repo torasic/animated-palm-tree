@@ -855,6 +855,22 @@ function OrderCard({
               </div>
             )}
 
+            {/* Paid & Processing Banner for Buyer */}
+            {!isIncoming && currentPaymentStatus === 'paid' && (currentStatus === 'DIPROSES' || currentStatus === 'DIKONFIRMASI') && (
+              <div className="p-3.5 bg-emerald-50/80 text-emerald-900 border border-[#C8E6C9] rounded-sm text-xs flex items-start gap-3">
+                <Package className="h-4 w-4 text-emerald-700 shrink-0 mt-0.5" />
+                <div className="font-sans leading-relaxed space-y-1">
+                  <p className="font-bold flex items-center gap-1.5 text-emerald-950">
+                    <CheckCircle2 size={14} className="text-emerald-700" />
+                    Pembayaran Berhasil — Menunggu Pesanan Disiapkan
+                  </p>
+                  <p className="text-emerald-900/90 text-xs">
+                    Dana pembayaran Anda aman tersimpan di rekening bersama (Escrow Grove). Petani/peternak sedang menyiapkan hasil panen Anda. Status akan diperbarui saat pesanan siap diambil atau dikirim.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* SECTION A: STATUS PEMBAYARAN & INFORMASI KONTAK */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
               {/* Payment Status Details */}
@@ -920,28 +936,17 @@ function OrderCard({
               <div className="space-y-3">
                 <h4 className="font-mono text-[10px] font-bold uppercase tracking-widest text-gr-ink-soft flex items-center gap-2">
                   <CreditCard size={13} />
-                  Pilihan Pembayaran
+                  Sistem Pembayaran
                 </h4>
  
                 <div className="space-y-3 text-xs font-sans">
-                  {/* Option 1: Payment Gateway Rekber */}
+                  {/* Payment Gateway Rekber Escrow */}
                   <div className="flex items-center gap-3">
                     <CreditCard size={16} className="text-gr-ink-soft shrink-0" />
                     <div className="space-y-0.5">
-                      <span className="font-bold text-gr-ink block">Transfer Bank & QRIS (Rekening Bersama)</span>
+                      <span className="font-bold text-gr-ink block">Transfer Bank & QRIS (Rekening Bersama / Escrow)</span>
                       <p className="text-gr-ink-soft text-xs leading-relaxed">
-                        Dana ditahan secara aman oleh sistem dan diteruskan setelah Anda mengonfirmasi penerimaan barang. Perkiraan biaya admin/gerbang pembayaran sebesar <strong className="font-semibold text-gr-ink">Rp {Math.round(estimatedAdminFee).toLocaleString('id-ID')}</strong> (2% dari total tagihan).
-                      </p>
-                    </div>
-                  </div>
- 
-                  {/* Option 2: Cash / COD */}
-                  <div className="flex items-center gap-3">
-                    <Banknote size={16} className="text-gr-ink-soft shrink-0" />
-                    <div className="space-y-0.5">
-                      <span className="font-bold text-gr-ink block">Pembayaran Tunai (Cash / COD)</span>
-                      <p className="text-gr-ink-soft text-xs leading-relaxed">
-                        Dapat dibayar tunai langsung saat penimbangan & serah terima barang. <strong className="font-semibold text-gr-ink">Tanpa biaya admin tambahan (Gratis biaya transaksi)</strong>.
+                        Dana ditahan secara aman oleh sistem rekening bersama (Escrow) dan akan diteruskan ke petani/peternak setelah pembeli menerima barang dan mengonfirmasi penerimaan. Perkiraan biaya gerbang pembayaran sebesar <strong className="font-semibold text-gr-ink">Rp {Math.round(estimatedAdminFee).toLocaleString('id-ID')}</strong> (2% dari total tagihan).
                       </p>
                     </div>
                   </div>
@@ -952,22 +957,30 @@ function OrderCard({
             {/* SECTION C: ACTION FOOTER */}
             {!isIncoming && (
               <div className="pt-2 border-t border-gr-line flex flex-wrap items-center justify-end gap-3">
+                {/* When order is waiting for confirmation, buyer can cancel but cannot pay yet */}
                 {currentPaymentStatus !== 'paid' && (currentStatus === 'MENUNGGU_KONFIRMASI' || currentStatus === 'DIPESAN') && (
-                  <Button
-                    disabled={isUpdating}
-                    variant="ghost"
-                    onClick={() => handleStatusChange('DIBATALKAN')}
-                    className="border border-gr-down/40 text-gr-down hover:bg-gr-down/10 bg-white font-mono text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-sm cursor-pointer transition-all "
-                  >
-                    {isUpdating ? 'Memproses...' : 'Batalkan Pesanan'}
-                  </Button>
+                  <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+                    <span className="text-xs font-sans text-amber-800 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-sm flex items-center gap-1.5 font-medium">
+                      <Clock size={13} className="text-amber-600 shrink-0" />
+                      Menunggu konfirmasi petani/peternak sebelum pembayaran
+                    </span>
+                    <Button
+                      disabled={isUpdating}
+                      variant="ghost"
+                      onClick={() => handleStatusChange('DIBATALKAN')}
+                      className="border border-gr-down/40 text-gr-down hover:bg-gr-down/10 bg-white font-mono text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-sm cursor-pointer transition-all shrink-0"
+                    >
+                      {isUpdating ? 'Memproses...' : 'Batalkan Pesanan'}
+                    </Button>
+                  </div>
                 )}
 
-                {currentPaymentStatus !== 'paid' && currentStatus !== 'DIBATALKAN' && (
+                {/* When order is confirmed by farmer (DIPROSES), buyer can proceed to pay */}
+                {currentPaymentStatus !== 'paid' && (currentStatus === 'DIPROSES' || currentStatus === 'DIKONFIRMASI') && (
                   <Button
                     disabled={isCheckingOut}
                     onClick={handleCheckout}
-                    className="bg-gr-board hover:bg-gr-board/90 text-gr-chalk border border-gr-board font-mono text-xs font-bold uppercase tracking-wider px-5 py-2 rounded-sm cursor-pointer  transition-all flex items-center justify-center gap-2"
+                    className="bg-gr-board hover:bg-gr-board/90 text-gr-chalk border border-gr-board font-mono text-xs font-bold uppercase tracking-wider px-5 py-2.5 rounded-sm cursor-pointer transition-all flex items-center justify-center gap-2"
                   >
                     {isCheckingOut ? (
                       <>
@@ -980,39 +993,80 @@ function OrderCard({
                   </Button>
                 )}
 
-                {currentPaymentStatus === 'paid' && currentEscrowStatus === 'held' && !buyerConfirmedAt && (
-                  <Button
-                    disabled={isConfirming}
-                    onClick={handleEscrowConfirmReceived}
-                    className="bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-sm cursor-pointer  transition-all"
-                  >
-                    {isConfirming ? 'Memproses...' : 'Konfirmasi Barang Diterima'}
-                  </Button>
+                {/* When order is paid and farmer is preparing the order */}
+                {currentPaymentStatus === 'paid' && (currentStatus === 'DIPROSES' || currentStatus === 'DIKONFIRMASI') && (
+                  <div className="w-full flex flex-wrap items-center justify-between gap-3 text-xs font-sans text-emerald-900 bg-emerald-50/70 border border-[#C8E6C9] px-3.5 py-2.5 rounded-sm">
+                    <span className="flex items-center gap-2 font-medium">
+                      <Clock size={14} className="text-emerald-700 shrink-0" />
+                      Menunggu petani/peternak menyiapkan pesanan dan menandai siap diambil / dikirim
+                    </span>
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-xs shrink-0 border border-emerald-300/60">
+                      Dana Ditahan di Escrow
+                    </span>
+                  </div>
                 )}
 
-                {currentPaymentStatus !== 'paid' && (currentStatus === 'SIAP_DIAMBIL' || currentStatus === 'DIKIRIM') && !buyerConfirmedAt && (
-                  <Button
-                    disabled={isConfirming}
-                    onClick={handleConfirmSuccess}
-                    className="bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-sm cursor-pointer  transition-all"
-                  >
-                    {isConfirming ? 'Memproses...' : 'Konfirmasi Barang Diterima'}
-                  </Button>
+                {/* When order is ready/shipped and buyer can confirm receipt or file complaint */}
+                {currentPaymentStatus === 'paid' && (currentStatus === 'SIAP_DIAMBIL' || currentStatus === 'DIKIRIM') && !buyerConfirmedAt && (
+                  <div className="w-full flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <span className="text-xs font-sans text-gr-ink font-medium flex items-center gap-1.5">
+                      <Truck size={14} className="text-gr-board shrink-0" />
+                      {currentStatus === 'SIAP_DIAMBIL'
+                        ? 'Pesanan sudah siap diambil di lokasi petani/peternak.'
+                        : 'Pesanan sedang dalam proses pengiriman.'}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setShowComplaintModal(true)}
+                        className="border border-amber-600/40 text-amber-800 hover:bg-amber-50 bg-white font-mono text-xs font-bold uppercase tracking-wider px-3.5 py-2 rounded-sm cursor-pointer transition-all flex items-center gap-1.5"
+                      >
+                        <AlertTriangle size={13} className="text-amber-600" />
+                        <span>Ajukan Komplain</span>
+                      </Button>
+                      <Button
+                        disabled={isConfirming}
+                        onClick={handleEscrowConfirmReceived}
+                        className="bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-xs font-bold uppercase tracking-wider px-5 py-2.5 rounded-sm cursor-pointer transition-all shrink-0 flex items-center gap-1.5"
+                      >
+                        <CheckCircle2 size={13} />
+                        <span>{isConfirming ? 'Memproses...' : 'Pesanan Selesai (Terima Barang)'}</span>
+                      </Button>
+                    </div>
+                  </div>
                 )}
 
-                {/* Tombol Ajukan Komplain (Hanya saat status DITERIMA) */}
+                {/* When order is DITERIMA (legacy or manual step), buyer can file complaint or complete and rate */}
                 {currentStatus === 'DITERIMA' && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setShowComplaintModal(true)}
-                    className="border border-amber-600/40 text-amber-800 hover:bg-amber-50 bg-white font-mono text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-sm cursor-pointer transition-all flex items-center gap-1.5"
-                  >
-                    <AlertTriangle size={13} className="text-amber-600" />
-                    <span>Ajukan Komplain</span>
-                  </Button>
+                  <div className="w-full flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <span className="text-xs font-sans text-gr-ink font-medium flex items-center gap-1.5">
+                      <CheckCircle2 size={14} className="text-emerald-700 shrink-0" />
+                      Barang telah diterima. Selesaikan pesanan untuk memberikan ulasan & rating ke penjual.
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setShowComplaintModal(true)}
+                        className="border border-amber-600/40 text-amber-800 hover:bg-amber-50 bg-white font-mono text-xs font-bold uppercase tracking-wider px-3.5 py-2 rounded-sm cursor-pointer transition-all flex items-center gap-1.5"
+                      >
+                        <AlertTriangle size={13} className="text-amber-600" />
+                        <span>Ajukan Komplain</span>
+                      </Button>
+                      <Button
+                        disabled={isConfirming}
+                        onClick={handleEscrowConfirmReceived}
+                        className="bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-xs font-bold uppercase tracking-wider px-5 py-2.5 rounded-sm cursor-pointer transition-all shrink-0 flex items-center gap-1.5"
+                      >
+                        <CheckCircle2 size={13} />
+                        <span>{isConfirming ? 'Memproses...' : 'Pesanan Selesai'}</span>
+                      </Button>
+                    </div>
+                  </div>
                 )}
 
+                {/* Rating Form when order is SELESAI */}
                 {currentStatus === 'SELESAI' && !hasBuyerRated && (
                   <div className="w-full pt-2">
                     <RatingForm
@@ -1022,7 +1076,7 @@ function OrderCard({
                         setHasBuyerRated(true);
                         onUpdate();
                       }}
-                      label="Nilai Penjual (Petani/Peternak)"
+                      label="Beri Ulasan & Nilai Penjual (Petani/Peternak)"
                     />
                   </div>
                 )}
@@ -1038,7 +1092,7 @@ function OrderCard({
 
             {/* Farmer actions */}
             {isIncoming && currentStatus !== 'SELESAI' && currentStatus !== 'BATAL' && currentStatus !== 'DIBATALKAN' && (
-              <div className="flex flex-wrap gap-3 pt-3 border-t border-gr-line">
+              <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-gr-line">
                 {(currentStatus === 'DIPESAN' || currentStatus === 'MENUNGGU_KONFIRMASI') && (
                   <>
                     <Button
@@ -1059,13 +1113,29 @@ function OrderCard({
                   </>
                 )}
                 {(currentStatus === 'DIKONFIRMASI' || currentStatus === 'DIPROSES') && (
-                  <Button
-                    disabled={isUpdating}
-                    onClick={() => handleStatusChange('SIAP_DIAMBIL')}
-                    className="bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-xs font-bold uppercase tracking-wider px-4 py-2.5 rounded-sm cursor-pointer  transition-all"
-                  >
-                    Tandai Siap Diambil
-                  </Button>
+                  currentPaymentStatus === 'paid' ? (
+                    <Button
+                      disabled={isUpdating}
+                      onClick={() => handleStatusChange('SIAP_DIAMBIL')}
+                      className="bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-xs font-bold uppercase tracking-wider px-4 py-2.5 rounded-sm cursor-pointer  transition-all"
+                    >
+                      Tandai Siap Diambil
+                    </Button>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <Button
+                        disabled={true}
+                        className="bg-gr-board/40 text-gr-chalk/70 cursor-not-allowed font-mono text-xs font-bold uppercase tracking-wider px-4 py-2.5 rounded-sm"
+                        title="Menunggu pembeli menyelesaikan pembayaran terlebih dahulu"
+                      >
+                        Tandai Siap Diambil
+                      </Button>
+                      <span className="text-xs font-sans text-amber-800 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-sm flex items-center gap-1.5 font-medium">
+                        <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                        Menunggu pembayaran pembeli
+                      </span>
+                    </div>
+                  )
                 )}
               </div>
             )}
