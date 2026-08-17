@@ -60,18 +60,13 @@ async def create_conversation(
             target_seller_id = product.seller_id
             target_buyer_id = current_user.id
     elif body.seller_id:
-        # Check if seller exists and is a farmer
+        # Check if seller exists
         seller_result = await db.execute(select(User).where(User.id == body.seller_id))
         seller = seller_result.scalar_one_or_none()
         if not seller:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Seller not found"
-            )
-        if seller.role != 'PETANI':
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Recipient must be a farmer/livestock breeder"
             )
         target_seller_id = seller.id
         target_buyer_id = current_user.id
@@ -99,10 +94,10 @@ async def create_conversation(
             detail="Cannot start a conversation with yourself"
         )
     
-    # Check if a conversation between this buyer and seller already exists
+    # Check if a conversation between these users already exists (bidirectional check)
     stmt = select(Conversation).where(
-        (Conversation.buyer_id == target_buyer_id) & 
-        (Conversation.seller_id == target_seller_id)
+        ((Conversation.buyer_id == target_buyer_id) & (Conversation.seller_id == target_seller_id)) |
+        ((Conversation.buyer_id == target_seller_id) & (Conversation.seller_id == target_buyer_id))
     )
     result = await db.execute(stmt)
     existing_conv = result.scalar_one_or_none()

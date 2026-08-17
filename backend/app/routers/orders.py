@@ -604,21 +604,16 @@ async def disburse_order_escrow(
 async def resolve_order_dispute(
     order_id: UUID,
     dispute_data: OrderDisputeResolve,
-    x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
-    token: Optional[str] = Query(None, description="Admin verification token"),
+    current_user: User = Depends(auth_service.get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Resolves dispute for an order in KOMPLAIN_DIPROSES status.
-    Authenticated via X-Admin-Token header or token query parameter.
-    """
-    admin_token = x_admin_token or token
-    if not admin_token or admin_token != settings.ADMIN_TOKEN:
+    from app.routers.admin import is_admin_user
+    if not is_admin_user(current_user):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized admin token"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akses ditolak: Hanya akun Administrator yang dapat menyelesaikan sengketa."
         )
-        
+
     stmt = select(Order).where(Order.id == order_id)
     result = await db.execute(stmt)
     order = result.scalar_one_or_none()

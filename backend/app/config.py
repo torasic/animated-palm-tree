@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = "placeholder_google_client_id"
     GEMINI_API_KEY: str = "placeholder_gemini_api_key"
     ADMIN_TOKEN: str = "placeholder_admin_token"
+    ADMIN_EMAIL: str = "admin@grove.id"
     APP_ENV: str = "production"
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
