@@ -53,11 +53,7 @@ function OrdersPageContent() {
         data = await productsApi.getMyProducts();
       } else if (tab === 'demands') {
         data = await demandRequestsApi.getCommittedDemandRequests();
-        if (userRole === 'PETANI') {
-          // Hide matched demands from the "demands" tab for farmers
-          data = data.filter((d: any) => !d.match_transaction);
-        }
-      } else if (userRole === 'PETANI' && tab === 'incoming') {
+      } else if (tab === 'incoming') {
         const [incomingOrders, committedDemands] = await Promise.all([
           ordersApi.getIncomingOrders(0, FETCH_LIMIT),
           demandRequestsApi.getCommittedDemandRequests()
@@ -68,16 +64,19 @@ function OrdersPageContent() {
           .map((d: any) => ({ ...d, isDemand: true }));
 
         data = [...incomingOrders, ...matchedDemands];
+      } else if (tab === 'purchases') {
+        data = await ordersApi.getMyPurchases(0, FETCH_LIMIT);
       } else if (tab === 'history') {
         if (userRole === 'PETANI') {
-          const [incomingOrders, committedDemands] = await Promise.all([
+          const [incomingOrders, committedDemands, myPurchases] = await Promise.all([
             ordersApi.getIncomingOrders(0, FETCH_LIMIT),
-            demandRequestsApi.getCommittedDemandRequests().catch(() => [])
+            demandRequestsApi.getCommittedDemandRequests().catch(() => []),
+            ordersApi.getMyPurchases(0, FETCH_LIMIT).catch(() => [])
           ]);
           const matchedDemands = (committedDemands || [])
-            .filter((d: any) => d.match_transaction && d.match_transaction.seller_id === userId)
+            .filter((d: any) => d.match_transaction && (d.match_transaction.seller_id === userId || d.buyer_id === userId))
             .map((d: any) => ({ ...d, isDemand: true }));
-          data = [...incomingOrders, ...matchedDemands];
+          data = [...incomingOrders, ...myPurchases, ...matchedDemands];
         } else {
           const [myPurchases, committedDemands] = await Promise.all([
             ordersApi.getMyPurchases(0, FETCH_LIMIT),
@@ -88,8 +87,6 @@ function OrdersPageContent() {
             .map((d: any) => ({ ...d, isDemand: true }));
           data = [...myPurchases, ...matchedDemands];
         }
-      } else if (userRole === 'PETANI') {
-        data = await ordersApi.getIncomingOrders(0, FETCH_LIMIT);
       } else {
         data = await ordersApi.getMyPurchases(0, FETCH_LIMIT);
       }
@@ -501,7 +498,7 @@ function OrdersPageContent() {
                             order={item} 
                             index={index} 
                             onUpdate={handleUpdate} 
-                            isIncoming={user?.role === 'PETANI'}
+                            isIncoming={item.seller_id === user?.id}
                           />
                         )
                       ))}
