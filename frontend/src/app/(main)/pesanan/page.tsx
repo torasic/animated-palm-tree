@@ -51,7 +51,7 @@ function OrdersPageContent() {
           // Hide matched demands from the "demands" tab for farmers
           data = data.filter((d: any) => !d.match_transaction);
         }
-      } else if (userRole === 'PETANI' && (tab === 'incoming' || tab === 'history')) {
+      } else if (userRole === 'PETANI' && tab === 'incoming') {
         const [incomingOrders, committedDemands] = await Promise.all([
           ordersApi.getIncomingOrders(0, FETCH_LIMIT),
           demandRequestsApi.getCommittedDemandRequests()
@@ -64,16 +64,26 @@ function OrdersPageContent() {
         data = [...incomingOrders, ...matchedDemands];
       } else if (tab === 'history') {
         if (userRole === 'PETANI') {
-          data = await ordersApi.getIncomingOrders(0, FETCH_LIMIT);
+          const [incomingOrders, committedDemands] = await Promise.all([
+            ordersApi.getIncomingOrders(0, FETCH_LIMIT),
+            demandRequestsApi.getCommittedDemandRequests().catch(() => [])
+          ]);
+          const matchedDemands = (committedDemands || [])
+            .filter((d: any) => d.match_transaction && d.match_transaction.seller_id === userId)
+            .map((d: any) => ({ ...d, isDemand: true }));
+          data = [...incomingOrders, ...matchedDemands];
         } else {
-          data = await ordersApi.getMyPurchases(0, FETCH_LIMIT);
+          const [myPurchases, committedDemands] = await Promise.all([
+            ordersApi.getMyPurchases(0, FETCH_LIMIT),
+            demandRequestsApi.getCommittedDemandRequests().catch(() => [])
+          ]);
+          const matchedDemands = (committedDemands || [])
+            .filter((d: any) => d.match_transaction && d.buyer_id === userId)
+            .map((d: any) => ({ ...d, isDemand: true }));
+          data = [...myPurchases, ...matchedDemands];
         }
       } else if (userRole === 'PETANI') {
-        if (tab === 'incoming') {
-          data = await ordersApi.getIncomingOrders(0, FETCH_LIMIT);
-        } else {
-          data = await ordersApi.getMyPurchases(0, FETCH_LIMIT);
-        }
+        data = await ordersApi.getIncomingOrders(0, FETCH_LIMIT);
       } else {
         data = await ordersApi.getMyPurchases(0, FETCH_LIMIT);
       }
@@ -113,7 +123,7 @@ function OrdersPageContent() {
     fetchUserAndOrders();
   }, []);
 
-  // Synchronize state from URL params
+  // Synchronize state from URL params (e.g. back/forward navigation)
   useEffect(() => {
     if (!user) return;
     const queryTab = searchParams.get('tab') as any;
@@ -126,11 +136,17 @@ function OrdersPageContent() {
       setActiveTab(targetTab);
       loadOrders(user.role, targetTab, user);
     }
-    setPage(targetPage);
+    if (targetPage !== page) {
+      setPage(targetPage);
+    }
   }, [searchParams, user]);
 
   const handleTabChange = (tab: 'incoming' | 'purchases' | 'history' | 'demands' | 'products') => {
     if (!user) return;
+    setActiveTab(tab);
+    setPage(1);
+    loadOrders(user.role, tab, user);
+
     const params = new URLSearchParams(searchParams.toString());
     params.set('tab', tab);
     params.set('page', '1');
@@ -139,6 +155,7 @@ function OrdersPageContent() {
   };
 
   const handlePageChange = (newPage: number) => {
+    setPage(newPage);
     const params = new URLSearchParams(searchParams.toString());
     params.set('tab', activeTab);
     params.set('page', newPage.toString());
@@ -158,6 +175,7 @@ function OrdersPageContent() {
     } else {
       setLimitList(newLimit);
     }
+    setPage(1);
     
     // Reset to page 1 in state and URL when items per page limit changes
     const params = new URLSearchParams(searchParams.toString());
@@ -207,29 +225,39 @@ function OrdersPageContent() {
     if (activeTab === 'incoming') {
       return {
         title: 'Tidak Ada Pesanan Masuk Aktif',
-        desc: 'Belum ada pesanan baru masuk dari pembeli.'
+        desc: 'Belum ada pesanan baru masuk dari pembeli.',
+        actionLabel: null as string | null,
+        actionTab: null as ('incoming' | 'purchases' | 'history' | 'demands' | 'products') | null,
       };
     } else if (activeTab === 'purchases') {
       return {
         title: 'Tidak Ada Pesanan Aktif',
-        desc: 'Semua transaksi Anda telah selesai atau dibatalkan. Kunjungi Riwayat & Ulasan untuk menilai pesanan.'
+        desc: 'Semua transaksi Anda telah selesai atau dibatalkan. Kunjungi Riwayat & Ulasan untuk menilai pesanan.',
+        actionLabel: 'Buka Riwayat & Ulasan',
+        actionTab: 'history' as ('incoming' | 'purchases' | 'history' | 'demands' | 'products'),
       };
     } else if (activeTab === 'products') {
       return {
         title: 'Kamu belum melisting produk',
-        desc: 'Mulai tawarkan hasil panenmu di marketplace melalui halaman Jual.'
+        desc: 'Mulai tawarkan hasil panenmu di marketplace melalui halaman Jual.',
+        actionLabel: null,
+        actionTab: null,
       };
     } else if (activeTab === 'history') {
       return {
         title: 'Belum Ada Riwayat Pesanan',
-        desc: 'Pesanan yang telah selesai atau dibatalkan akan muncul di sini.'
+        desc: 'Pesanan yang telah selesai atau dibatalkan akan muncul di sini.',
+        actionLabel: null,
+        actionTab: null,
       };
     } else {
       return {
         title: 'Belum ada permintaan diterima',
         desc: user?.role === 'PETANI'
           ? 'Belum ada permintaan masuk yang dikomit atau dicocokkan.'
-          : 'Belum ada petani/peternak yang menyetujui/berkomitmen pada permintaan hasil panen/ternakmu.'
+          : 'Belum ada petani/peternak yang menyetujui/berkomitmen pada permintaan hasil panen/ternakmu.',
+        actionLabel: null,
+        actionTab: null,
       };
     }
   };
@@ -467,7 +495,7 @@ function OrdersPageContent() {
                 />
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-gr-line rounded-sm bg-white/40 p-8  w-full">
+              <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-gr-line rounded-sm bg-white/40 p-8 w-full">
                 <Package className="h-12 w-12 text-gr-ink-soft/30 mb-4" />
                 <span className="font-display text-2xl font-semibold text-gr-ink">
                   {emptyState.title}
@@ -475,6 +503,15 @@ function OrdersPageContent() {
                 <p className="mt-2 font-sans text-sm text-gr-ink-soft max-w-xs">
                   {emptyState.desc}
                 </p>
+                {emptyState.actionTab && (
+                  <button
+                    onClick={() => handleTabChange(emptyState.actionTab!)}
+                    className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-gr-board text-gr-chalk rounded-sm font-mono text-xs font-bold uppercase tracking-wider hover:bg-gr-board/90 transition-all cursor-pointer shadow-xs"
+                  >
+                    <span>{emptyState.actionLabel}</span>
+                    <span>→</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
