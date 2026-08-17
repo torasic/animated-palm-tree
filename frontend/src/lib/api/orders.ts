@@ -1,4 +1,4 @@
-import { apiClient, BASE_URL, WS_BASE_URL } from './client';
+import { apiClient, WS_BASE_URL } from './client';
 
 export const ordersApi = {
   createOrder: async (data: { product_id: string; quantity_kg: number }) => {
@@ -91,9 +91,9 @@ export const ordersApi = {
 };
 
 // WebSocket Hook for real-time status updates
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
-export function useOrderSocket(orderId: string | null) {
+export function useOrderSocket(orderId: string | null, onStatusChange?: (data: unknown) => void) {
   const [data, setData] = useState<{
     status: string | null;
     payment_status: string | null;
@@ -104,29 +104,50 @@ export function useOrderSocket(orderId: string | null) {
     escrow_status: null,
   });
 
+  const onStatusChangeRef = useRef(onStatusChange);
+  useEffect(() => {
+    onStatusChangeRef.current = onStatusChange;
+  }, [onStatusChange]);
+
   useEffect(() => {
     if (!orderId) return;
 
-    const wsUrl = `${WS_BASE_URL}/ws/orders/${orderId}`;
-    const socket = new WebSocket(wsUrl);
+    let socket: WebSocket | null = null;
+    try {
+      const wsUrl = `${WS_BASE_URL}/ws/orders/${orderId}`;
+      socket = new WebSocket(wsUrl);
 
-    socket.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        setData({
-          status: payload.status || null,
-          payment_status: payload.payment_status || null,
-          escrow_status: payload.escrow_status || null,
-        });
-      } catch (err) {
-        console.error('Failed to parse order socket event:', err);
-      }
-    };
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          setData({
+            status: payload.status || null,
+            payment_status: payload.payment_status || null,
+            escrow_status: payload.escrow_status || null,
+          });
+          if (onStatusChangeRef.current) {
+            onStatusChangeRef.current(payload);
+          }
+        } catch (err) {
+          console.error('Failed to parse order socket event:', err);
+        }
+      };
+
+      socket.onerror = (err) => {
+        // Graceful handling, background polling will keep state synced
+        console.debug('Order websocket connection error:', err);
+      };
+    } catch (err) {
+      console.debug('Failed to initialize WebSocket:', err);
+    }
 
     return () => {
-      socket.close();
+      if (socket) {
+        socket.close();
+      }
     };
   }, [orderId]);
 
   return data;
 }
+
