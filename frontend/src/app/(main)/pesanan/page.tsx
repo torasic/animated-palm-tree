@@ -35,8 +35,13 @@ function OrdersPageContent() {
   const [limitGrid, setLimitGrid] = useState(6);
   const [limitList, setLimitList] = useState(10);
 
-  const loadOrders = async (userRole: string, tab: 'incoming' | 'purchases' | 'history' | 'demands' | 'products', currentUser?: any) => {
-    setIsLoading(true);
+  const loadOrders = async (
+    userRole: string,
+    tab: 'incoming' | 'purchases' | 'history' | 'demands' | 'products',
+    currentUser?: any,
+    showLoading = true
+  ) => {
+    if (showLoading) setIsLoading(true);
     try {
       const FETCH_LIMIT = 100; // Large limit to safely fetch all items for client-side pagination (backend max is 100)
       let data: any[] = [];
@@ -93,7 +98,7 @@ function OrdersPageContent() {
     } catch (err) {
       console.error('Failed to load orders/products:', err);
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   };
 
@@ -111,7 +116,7 @@ function OrdersPageContent() {
       setActiveTab(initialTab);
       setPage(initialPage);
       
-      await loadOrders(userData.role, initialTab, userData);
+      await loadOrders(userData.role, initialTab, userData, true);
     } catch (err: any) {
       if (err.status !== 401) {
         console.error('Failed to get user/orders:', err);
@@ -124,6 +129,25 @@ function OrdersPageContent() {
     fetchUserAndOrders();
   }, []);
 
+  // Auto-sync polling every 5 seconds and on window focus (silent background sync)
+  useEffect(() => {
+    if (!user) return;
+
+    const syncSilently = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        loadOrders(user.role, activeTab, user, false);
+      }
+    };
+
+    const intervalId = setInterval(syncSilently, 5000);
+    window.addEventListener('focus', syncSilently);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', syncSilently);
+    };
+  }, [user, activeTab]);
+
   // Synchronize state from URL params (e.g. back/forward navigation)
   useEffect(() => {
     if (!user) return;
@@ -135,7 +159,7 @@ function OrdersPageContent() {
     
     if (targetTab !== activeTab) {
       setActiveTab(targetTab);
-      loadOrders(user.role, targetTab, user);
+      loadOrders(user.role, targetTab, user, true);
     }
     if (targetPage !== page) {
       setPage(targetPage);
@@ -599,7 +623,9 @@ function OrderCard({
     }
   };
   
-  const liveData = useOrderSocket(order.id);
+  const liveData = useOrderSocket(order.id, () => {
+    onUpdate();
+  });
   const liveStatus = liveData.status;
   const currentStatus = liveStatus || order.status;
   const currentPaymentStatus = liveData.payment_status || order.payment_status;
