@@ -67,6 +67,27 @@ export const ordersApi = {
     });
     return response.json();
   },
+
+  fileComplaint: async (orderId: string, data: { reason: string; description: string }) => {
+    const response = await apiClient(`/orders/${orderId}/komplain`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return response.json();
+  },
+
+  resolveDispute: async (orderId: string, data: { action: 'REFUND_BUYER' | 'RELEASE_SELLER'; admin_note?: string }, adminToken?: string) => {
+    const headers: Record<string, string> = {};
+    if (adminToken) {
+      headers['X-Admin-Token'] = adminToken;
+    }
+    const response = await apiClient(`/orders/${orderId}/resolve-dispute`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+    return response.json();
+  },
 };
 
 // WebSocket Hook for real-time status updates

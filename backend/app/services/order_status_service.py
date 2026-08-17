@@ -236,7 +236,7 @@ async def confirm_received(db: AsyncSession, order: Order, current_user: User) -
     
     if order.escrow_status == EscrowStatus.HELD:
         from app.services.escrow_service import escrow_service
-        # Delegate to escrow service to release funds to the seller (it will also set status to SELESAI, commit and broadcast)
+        # Delegate to escrow service to release funds to the seller (it sets status to DITERIMA, releases escrow, commits and broadcasts)
         await escrow_service.confirm_received_and_release(
             db=db,
             source_type="pesanan",
@@ -247,26 +247,17 @@ async def confirm_received(db: AsyncSession, order: Order, current_user: User) -
     else:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         
-        # Transition to DITERIMA transiently
         order.status = OrderStatus.DITERIMA
         order.buyer_confirmed_at = now
         order.received_at = now
         order.status_updated_at = now
         db.add(order)
         
-        # Broadcast DITERIMA
-        await broadcast_status_change(order, "Pesanan dikonfirmasi diterima oleh pembeli.")
-        
-        # Transition automatically to SELESAI
-        order.status = OrderStatus.SELESAI
-        order.completed_at = now
-        order.status_updated_at = now
-        db.add(order)
-        
         await db.commit()
         await db.refresh(order)
         
-        await broadcast_status_change(order, "Pesanan selesai. Status: SELESAI.")
+        # Broadcast DITERIMA
+        await broadcast_status_change(order, "Pesanan dikonfirmasi diterima oleh pembeli. Status: DITERIMA.")
     return order
 
 
@@ -319,7 +310,7 @@ async def system_timeout_pickup(db: AsyncSession, order: Order) -> Order:
     await broadcast_status_change(order, msg)
     return order
 
-# Timeout 3: Auto Confirm Received (enters DITERIMA then MASA_KOMPLAIN)
+# Timeout 3: Auto Confirm Received (enters DITERIMA)
 async def system_auto_confirm_received(db: AsyncSession, order: Order) -> Order:
     if order.status not in (OrderStatus.SIAP_DIAMBIL, OrderStatus.DIKIRIM):
         return order
@@ -328,7 +319,7 @@ async def system_auto_confirm_received(db: AsyncSession, order: Order) -> Order:
     
     if order.escrow_status == EscrowStatus.HELD:
         from app.services.escrow_service import escrow_service
-        # Delegate to escrow service to release funds to the seller (it will also set status to SELESAI, commit and broadcast)
+        # Delegate to escrow service to release funds to the seller
         await escrow_service.confirm_received_and_release(
             db=db,
             source_type="pesanan",
@@ -344,17 +335,10 @@ async def system_auto_confirm_received(db: AsyncSession, order: Order) -> Order:
         order.status_updated_at = now
         db.add(order)
         
-        await broadcast_status_change(order, "Pesanan otomatis dikonfirmasi diterima oleh sistem.")
-        
-        order.status = OrderStatus.SELESAI
-        order.completed_at = now
-        order.status_updated_at = now
-        db.add(order)
-        
         await db.commit()
         await db.refresh(order)
         
-        await broadcast_status_change(order, "Pesanan selesai. Status: SELESAI.")
+        await broadcast_status_change(order, "Pesanan otomatis dikonfirmasi diterima oleh sistem. Status: DITERIMA.")
     return order
 
 
@@ -373,24 +357,25 @@ async def file_complaint(
             detail="Hanya pembeli yang dapat mengajukan komplain"
         )
         
-    # 2. Validate escrow status
-    from app.models.payment_transaction import EscrowStatus
-    if order.escrow_status != EscrowStatus.HELD:
+    # 2. Validate order status
+    if order.status not in (OrderStatus.DITERIMA, OrderStatus.MASA_KOMPLAIN, OrderStatus.DIKIRIM, OrderStatus.SIAP_DIAMBIL):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Komplain hanya dapat diajukan jika dana masih ditahan di escrow (status HELD)"
+            detail=f"Komplain tidak dapat diajukan untuk pesanan dengan status {order.status.value}"
         )
         
-    # 3. Update order fields
+    from app.models.payment_transaction import EscrowStatus
+    # 3. Update escrow status if held
+    if order.escrow_status == EscrowStatus.HELD:
+        order.escrow_status = EscrowStatus.DISPUTED
+        
+    # 4. Update order fields
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     order.status = OrderStatus.KOMPLAIN_DIPROSES
     order.complaint_reason = reason
     order.complaint_description = description
     order.complained_at = now
     order.status_updated_at = now
-    
-    # Put escrow in DISPUTED status
-    order.escrow_status = EscrowStatus.DISPUTED
     
     db.add(order)
     await db.commit()
@@ -399,7 +384,110 @@ async def file_complaint(
     # Broadcast to frontend
     await broadcast_status_change(
         order,
-        f"Pembeli mengajukan komplain: {reason.value}. Deskripsi: {description}"
+        f"Pembeli mengajukan komplain: {reason.value}. Deskripsi: {description}. Status: Dalam Peninjauan Sengketa."
     )
     return order
+
+
+# Transition 7: Resolve Dispute (Admin)
+async def resolve_dispute(
+    db: AsyncSession,
+    order: Order,
+    action: str,
+    admin_note: Optional[str] = None
+) -> tuple[Order, bool]:
+    """
+    Resolves dispute for an order in KOMPLAIN_DIPROSES status.
+    Returns (order, refund_manual_required)
+    """
+    if order.status != OrderStatus.KOMPLAIN_DIPROSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Sengketa hanya dapat diselesaikan jika status pesanan adalah KOMPLAIN_DIPROSES (status saat ini: {order.status.value})"
+        )
+        
+    from app.models.payment_transaction import EscrowStatus
+    import uuid
+    from app.services.xendit_service import xendit_service
+    
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    refund_manual_required = False
+    
+    if action == "REFUND_BUYER":
+        if order.escrow_status == EscrowStatus.RELEASED:
+            # Funds were already disbursed to seller before complaint was filed
+            refund_manual_required = True
+        elif order.escrow_status in (EscrowStatus.HELD, EscrowStatus.DISPUTED):
+            order.escrow_status = EscrowStatus.REFUNDED
+            
+        order.status = OrderStatus.DIBATALKAN
+        order.cancellation_reason = CancellationReason.PEMBELI_BATAL
+        order.status_updated_at = now
+        
+        db.add(order)
+        await db.commit()
+        await db.refresh(order)
+        
+        note_text = f" Catatan admin: {admin_note}" if admin_note else ""
+        if refund_manual_required:
+            msg = f"Sengketa diselesaikan: REFUND_BUYER (Dana telah cair ke penjual, refund pembeli perlu diproses manual administratif). Status: DIBATALKAN.{note_text}"
+        else:
+            msg = f"Sengketa diselesaikan: REFUND_BUYER. Dana dikembalikan ke pembeli. Status: DIBATALKAN.{note_text}"
+        await broadcast_status_change(order, msg)
+        
+    elif action == "RELEASE_SELLER":
+        if order.escrow_status in (EscrowStatus.HELD, EscrowStatus.DISPUTED):
+            order.escrow_status = EscrowStatus.RELEASED
+            order.released_at = now
+            
+            # Fetch product to find seller ID and trigger disbursement if not already done
+            stmt_p = select(Product).where(Product.id == order.product_id)
+            res_p = await db.execute(stmt_p)
+            product = res_p.scalar_one_or_none()
+            if product:
+                stmt_seller = select(User).where(User.id == product.seller_id)
+                res_seller = await db.execute(stmt_seller)
+                seller = res_seller.scalar_one_or_none()
+                
+                if seller and seller.bank_name and seller.bank_account_number and seller.bank_account_holder:
+                    amount = product.price_per_kg * order.quantity_kg
+                    disb_external_id = f"disb_pesanan_{order.id.hex}_{uuid.uuid4().hex[:6]}"
+                    try:
+                        res_disb = await xendit_service.create_disbursement(
+                            external_id=disb_external_id,
+                            amount=amount,
+                            bank_code=seller.bank_name,
+                            account_holder_name=seller.bank_account_holder,
+                            account_number=seller.bank_account_number,
+                            description=f"Grove Escrow Dispute Release for Order {str(order.id)[:8]}"
+                        )
+                        order.disbursement_id = res_disb.get("id")
+                        order.disbursement_status = res_disb.get("status", "PENDING").lower()
+                        order.disbursed_at = now
+                    except Exception as e:
+                        print(f"Failed to create Xendit disbursement for order {order.id}: {e}")
+                        order.disbursement_status = "failed"
+                else:
+                    order.disbursement_status = "pending_bank_details"
+                    
+        order.status = OrderStatus.SELESAI
+        order.completed_at = now
+        order.status_updated_at = now
+        
+        db.add(order)
+        await db.commit()
+        await db.refresh(order)
+        
+        note_text = f" Catatan admin: {admin_note}" if admin_note else ""
+        msg = f"Sengketa diselesaikan: RELEASE_SELLER. Dana diteruskan ke penjual. Status: SELESAI.{note_text}"
+        await broadcast_status_change(order, msg)
+        
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Aksi resolusi sengketa tidak valid: {action}. Gunakan REFUND_BUYER atau RELEASE_SELLER."
+        )
+        
+    return order, refund_manual_required
+
 

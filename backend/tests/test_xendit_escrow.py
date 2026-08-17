@@ -170,7 +170,7 @@ async def test_order_escrow_lifecycle(mock_create_invoice, mock_create_disbursem
     await escrow_service.confirm_received_and_release(db, "pesanan", order.id, buyer.id)
     await db.refresh(order)
     assert order.escrow_status == EscrowStatus.RELEASED
-    assert order.status == OrderStatus.SELESAI
+    assert order.status == OrderStatus.DITERIMA
     assert order.confirmed_received_at is not None
     assert order.disbursement_id == "disb-1111"
     assert order.disbursement_status == "pending"

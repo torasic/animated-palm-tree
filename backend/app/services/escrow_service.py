@@ -286,10 +286,9 @@ class EscrowService:
             order.escrow_status = EscrowStatus.RELEASED
             order.confirmed_received_at = now
             order.released_at = now
-            order.status = OrderStatus.SELESAI
+            order.status = OrderStatus.DITERIMA
             order.buyer_confirmed_at = now
             order.received_at = now
-            order.completed_at = now
             order.status_updated_at = now
 
             # Execute Xendit Disbursement (Cara 1)

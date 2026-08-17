@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func
 from sqlalchemy.orm import aliased
@@ -6,6 +6,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from app.db import get_db
+from app.config import settings
 from app.models.user import User, UserRole
 from app.models.product import Product, ProductStatus
 from app.models.order import Order, OrderStatus, CancellationReason, ComplaintReason
@@ -13,7 +14,8 @@ from app.models.rating import Rating, TransactionType
 from app.services import auth_service, connection_manager
 from app.services.escrow_service import escrow_service
 from datetime import datetime
-from app.schemas.order import OrderCreate, OrderResponse, OrderComplaint
+from app.schemas.order import OrderCreate, OrderResponse, OrderComplaint, OrderDisputeResolve
+
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -73,6 +75,10 @@ async def get_full_order_response(db: AsyncSession, order_id: UUID) -> OrderResp
         seller_id=row.seller_id,
         has_buyer_rated=row.has_buyer_rated,
         cancellation_reason=row.Order.cancellation_reason,
+        complaint_reason=row.Order.complaint_reason,
+        complaint_description=row.Order.complaint_description,
+        complained_at=row.Order.complained_at,
+        completed_at=row.Order.completed_at,
         payment_status=row.Order.payment_status.value if row.Order.payment_status else None,
         escrow_status=row.Order.escrow_status.value if row.Order.escrow_status else None,
         xendit_invoice_id=row.Order.xendit_invoice_id,
@@ -221,6 +227,10 @@ async def list_orders(
             seller_id=row.seller_id,
             has_buyer_rated=row.has_buyer_rated,
             cancellation_reason=order.cancellation_reason,
+            complaint_reason=order.complaint_reason,
+            complaint_description=order.complaint_description,
+            complained_at=order.complained_at,
+            completed_at=order.completed_at,
             payment_status=order.payment_status.value if order.payment_status else None,
             escrow_status=order.escrow_status.value if order.escrow_status else None,
             xendit_invoice_id=order.xendit_invoice_id,
@@ -302,6 +312,10 @@ async def list_incoming_orders(
             seller_id=row.seller_id,
             has_buyer_rated=row.has_buyer_rated,
             cancellation_reason=order.cancellation_reason,
+            complaint_reason=order.complaint_reason,
+            complaint_description=order.complaint_description,
+            complained_at=order.complained_at,
+            completed_at=order.completed_at,
             payment_status=order.payment_status.value if order.payment_status else None,
             escrow_status=order.escrow_status.value if order.escrow_status else None,
             xendit_invoice_id=order.xendit_invoice_id,
@@ -377,6 +391,10 @@ async def list_my_purchases(
             seller_id=row.seller_id,
             has_buyer_rated=row.has_buyer_rated,
             cancellation_reason=order.cancellation_reason,
+            complaint_reason=order.complaint_reason,
+            complaint_description=order.complaint_description,
+            complained_at=order.complained_at,
+            completed_at=order.completed_at,
             payment_status=order.payment_status.value if order.payment_status else None,
             escrow_status=order.escrow_status.value if order.escrow_status else None,
             xendit_invoice_id=order.xendit_invoice_id,
@@ -566,5 +584,46 @@ async def disburse_order_escrow(
         user_id=current_user.id
     )
     return await get_full_order_response(db, order_id)
+
+
+@router.post("/{order_id}/resolve-dispute", response_model=OrderResponse)
+async def resolve_order_dispute(
+    order_id: UUID,
+    dispute_data: OrderDisputeResolve,
+    x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
+    token: Optional[str] = Query(None, description="Admin verification token"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Resolves dispute for an order in KOMPLAIN_DIPROSES status.
+    Authenticated via X-Admin-Token header or token query parameter.
+    """
+    admin_token = x_admin_token or token
+    if not admin_token or admin_token != settings.ADMIN_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized admin token"
+        )
+        
+    stmt = select(Order).where(Order.id == order_id)
+    result = await db.execute(stmt)
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order tidak ditemukan")
+        
+    from app.services import order_status_service
+    order, refund_manual_required = await order_status_service.resolve_dispute(
+        db=db,
+        order=order,
+        action=dispute_data.action.value,
+        admin_note=dispute_data.admin_note
+    )
+    
+    resp = await get_full_order_response(db, order.id)
+    resp.refund_manual_required = refund_manual_required
+    resp.admin_note = dispute_data.admin_note
+    return resp
+
 
 

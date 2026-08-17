@@ -782,6 +782,13 @@ async def match_demand_request_with_seller(
     if req.buyer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Hanya pembeli yang membuat permintaan yang dapat mencocokkan")
 
+    remaining_needed = max(0.0, req.quantity_kg_needed - req.quantity_kg_committed)
+    if remaining_needed <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Permintaan sudah terpenuhi sepenuhnya, tidak dapat menerima match tambahan"
+        )
+
     if req.status not in (DemandRequestStatus.TERBUKA, DemandRequestStatus.TERPENUHI):
         raise HTTPException(status_code=400, detail="Permintaan sudah tidak aktif untuk pencocokan")
 
@@ -827,7 +834,13 @@ async def match_demand_request_with_seller(
 
     # Create DemandTransaction
     remaining_needed = max(0.0, req.quantity_kg_needed - req.quantity_kg_committed)
-    default_qty = min(product.quantity_kg, remaining_needed) if remaining_needed > 0 else min(product.quantity_kg, req.quantity_kg_needed)
+    if remaining_needed <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Permintaan sudah terpenuhi sepenuhnya, tidak dapat menerima match tambahan"
+        )
+
+    default_qty = min(product.quantity_kg, remaining_needed)
     quantity_kg = default_qty
     if body.quantity_kg is not None:
         if body.quantity_kg <= 0:

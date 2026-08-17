@@ -175,14 +175,48 @@ async def check_expired_demand_requests():
                 print(f"Error expiring demand request {demand.id}: {e}")
                 await db.rollback()
 
+async def check_complaint_timeouts():
+    """
+    Periodic job to check orders in DITERIMA status past TIMEOUT_KOMPLAIN
+    and automatically complete them to SELESAI.
+    """
+    async with AsyncSessionLocal() as db:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        threshold = now - timedelta(seconds=settings.TIMEOUT_KOMPLAIN)
+        stmt = (
+            select(Order)
+            .where(
+                Order.status == OrderStatus.DITERIMA,
+                Order.received_at <= threshold
+            )
+        )
+        res = await db.execute(stmt)
+        orders = res.scalars().all()
+
+        for order in orders:
+            try:
+                order.status = OrderStatus.SELESAI
+                order.completed_at = now
+                order.status_updated_at = now
+                db.add(order)
+                await db.commit()
+
+                from app.services.order_status_service import broadcast_status_change
+                await broadcast_status_change(order, "Masa komplain berakhir. Pesanan selesai otomatis. Status: SELESAI.")
+            except Exception as e:
+                print(f"Error completing order past complaint timeout for {order.id}: {e}")
+                await db.rollback()
+
 def start_scheduler():
     scheduler.add_job(check_confirmation_timeouts, 'interval', seconds=30, id='check_confirmation_timeouts', replace_existing=True)
     scheduler.add_job(check_pickup_and_auto_confirm, 'interval', seconds=30, id='check_pickup_and_auto_confirm', replace_existing=True)
     scheduler.add_job(check_demand_match_timeouts, 'interval', seconds=30, id='check_demand_match_timeouts', replace_existing=True)
     scheduler.add_job(check_expired_demand_requests, 'interval', minutes=1, id='check_expired_demand_requests', replace_existing=True)
+    scheduler.add_job(check_complaint_timeouts, 'interval', seconds=30, id='check_complaint_timeouts', replace_existing=True)
     scheduler.start()
     print("APScheduler started successfully.")
 
 def shutdown_scheduler():
     scheduler.shutdown()
     print("APScheduler shut down successfully.")
+

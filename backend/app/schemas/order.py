@@ -1,8 +1,14 @@
+from enum import Enum
 from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime
 from typing import Optional
+
 from app.models.order import OrderStatus, CancellationReason, ComplaintReason
+
+class DisputeAction(str, Enum):
+    REFUND_BUYER = "REFUND_BUYER"
+    RELEASE_SELLER = "RELEASE_SELLER"
 
 class OrderCreate(BaseModel):
     product_id: UUID
@@ -19,6 +25,12 @@ class OrderResponse(BaseModel):
     created_at: datetime
     
     cancellation_reason: Optional[CancellationReason] = None
+    complaint_reason: Optional[ComplaintReason] = None
+    complaint_description: Optional[str] = None
+    complained_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    refund_manual_required: Optional[bool] = None
+    admin_note: Optional[str] = None
     
     # Joined metadata fields
     product_name: Optional[str] = None
@@ -46,3 +58,8 @@ class OrderResponse(BaseModel):
 class OrderComplaint(BaseModel):
     reason: ComplaintReason
     description: str
+
+class OrderDisputeResolve(BaseModel):
+    action: DisputeAction
+    admin_note: Optional[str] = None
+

@@ -11,7 +11,8 @@ from app.db import get_db
 from app.models.user import User, UserRole
 from app.models.product import Product, ProductStatus
 from app.schemas.product import ProductResponse, ProductUpdate
-from app.services import auth_service, storage_service, embedding_service, price_matching_service
+from app.services import auth_service, storage_service, price_matching_service
+from app.services.embedding_service import embedding_service
 from geoalchemy2 import WKTElement
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ async def create_product(
     
     # Generate semantic embedding from name and category
     embedding_text = f"{name} {category}"
-    embedding = await embedding_service.embedding_service.generate_embedding(embedding_text)
+    embedding = await embedding_service.generate_embedding(embedding_text)
     
     product_location = None
     product_lat = lat
