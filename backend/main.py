@@ -72,9 +72,6 @@ app.include_router(ratings.router)
 app.include_router(webhooks.router)
 app.include_router(conversations.router)
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
-    return {"status": "ok"}
-
-
-#tes
+    return {"status": "ok"}
