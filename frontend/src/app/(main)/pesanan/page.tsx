@@ -516,6 +516,34 @@ function OrderCard({
   const router = useRouter();
   const [chatLoading, setChatLoading] = useState(false);
 
+  // Complaint modal state
+  const [showComplaintModal, setShowComplaintModal] = useState(false);
+  const [complaintReason, setComplaintReason] = useState('BARANG_RUSAK');
+  const [complaintDescription, setComplaintDescription] = useState('');
+  const [isSubmittingComplaint, setIsSubmittingComplaint] = useState(false);
+
+  const handleFileComplaint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!complaintDescription.trim()) {
+      alert('Harap isi penjelasan kendala komplain');
+      return;
+    }
+    try {
+      setIsSubmittingComplaint(true);
+      await ordersApi.fileComplaint(order.id, {
+        reason: complaintReason,
+        description: complaintDescription.trim(),
+      });
+      setShowComplaintModal(false);
+      onUpdate();
+    } catch (err: any) {
+      console.error('Failed to file complaint:', err);
+      alert(err.message || 'Gagal mengajukan komplain');
+    } finally {
+      setIsSubmittingComplaint(false);
+    }
+  };
+
   const handleContact = async () => {
     try {
       setChatLoading(true);
@@ -606,7 +634,10 @@ function OrderCard({
       case 'DIKIRIM':
         return { icon: Truck, pillStyle: 'bg-gr-board/10 text-gr-board border-gr-board/20', label: 'Dikirim' };
       case 'DITERIMA':
-        return { icon: CheckCircle2, pillStyle: 'bg-gr-up/10 text-gr-up border-gr-up/20', label: 'Diterima' };
+        return { icon: CheckCircle2, pillStyle: 'bg-emerald-50 text-emerald-800 border-[#C8E6C9]', label: 'Diterima' };
+      case 'MASA_KOMPLAIN':
+      case 'KOMPLAIN_DIPROSES':
+        return { icon: AlertTriangle, pillStyle: 'bg-amber-500/10 text-amber-800 border-amber-500/20', label: 'Dalam Peninjauan Sengketa' };
       case 'SELESAI': 
         return { icon: CheckCircle2, pillStyle: 'bg-gr-paper text-gr-ink-soft border-gr-line', label: 'Selesai' };
       case 'BATAL': 
@@ -668,12 +699,13 @@ function OrderCard({
           "flex items-center gap-1.5 px-2.5 py-1 rounded-sm border text-[10px] font-sans font-bold uppercase tracking-wider ",
           (currentStatus === 'MENUNGGU_KONFIRMASI' || currentStatus === 'DIPESAN') && "bg-amber-500/5 text-amber-800 border-amber-500/20",
           (currentStatus === 'DIKONFIRMASI' || currentStatus === 'DIPROSES' || currentStatus === 'DITERIMA') && "bg-emerald-50 text-emerald-800 border-[#C8E6C9]",
+          (currentStatus === 'KOMPLAIN_DIPROSES' || currentStatus === 'MASA_KOMPLAIN') && "bg-amber-500/10 text-amber-800 border-amber-500/20",
           (currentStatus === 'SELESAI') && "bg-gr-board/5 text-gr-board border-gr-line",
           (currentStatus === 'BATAL' || currentStatus === 'DIBATALKAN') && "bg-red-50 text-gr-down border-gr-down/20"
         )}>
           <span className={cn(
             "h-1.5 w-1.5 rounded-full shrink-0",
-            (currentStatus === 'MENUNGGU_KONFIRMASI' || currentStatus === 'DIPESAN') ? "bg-amber-500 animate-pulse" :
+            (currentStatus === 'MENUNGGU_KONFIRMASI' || currentStatus === 'DIPESAN' || currentStatus === 'KOMPLAIN_DIPROSES' || currentStatus === 'MASA_KOMPLAIN') ? "bg-amber-500 animate-pulse" :
             (currentStatus === 'BATAL' || currentStatus === 'DIBATALKAN') ? "bg-gr-down" : "bg-gr-up"
           )} />
           <span>{config.label}</span>
@@ -759,7 +791,29 @@ function OrderCard({
                     {order.cancellation_reason === 'PETANI_MENOLAK' && 'Pesanan ditolak oleh penjual/petani/peternak.'}
                     {order.cancellation_reason === 'TIMEOUT_KONFIRMASI' && 'Dibatalkan otomatis oleh sistem karena penjual tidak memberikan konfirmasi pesanan tepat waktu.'}
                     {order.cancellation_reason === 'TIMEOUT_PENGAMBILAN' && 'Dibatalkan otomatis oleh sistem karena barang tidak diambil tepat waktu.'}
+                    {order.cancellation_reason === 'PEMBELI_BATAL' && 'Pesanan dibatalkan / refund penyelesaian sengketa.'}
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* Dispute Review Banner if disputed */}
+            {(currentStatus === 'KOMPLAIN_DIPROSES' || currentStatus === 'MASA_KOMPLAIN') && (
+              <div className="p-3.5 bg-amber-500/10 text-amber-900 border border-amber-500/20 rounded-sm text-xs flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                <div className="font-sans leading-relaxed space-y-1">
+                  <p className="font-bold">Transaksi Dalam Peninjauan Sengketa</p>
+                  <p className="opacity-90">
+                    Komplain telah diajukan dan sedang dalam peninjauan sengketa oleh admin penengah.
+                  </p>
+                  {order.complaint_reason && (
+                    <p className="font-medium text-amber-800">
+                      Alasan: <span className="font-normal">{order.complaint_reason}</span>
+                    </p>
+                  )}
+                  {order.complaint_description && (
+                    <p className="opacity-80 italic">"{order.complaint_description}"</p>
+                  )}
                 </div>
               </div>
             )}
@@ -909,7 +963,20 @@ function OrderCard({
                   </Button>
                 )}
 
-                {buyerConfirmedAt && !hasBuyerRated && (
+                {/* Tombol Ajukan Komplain (Hanya saat status DITERIMA) */}
+                {currentStatus === 'DITERIMA' && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setShowComplaintModal(true)}
+                    className="border border-amber-600/40 text-amber-800 hover:bg-amber-50 bg-white font-mono text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-sm cursor-pointer transition-all flex items-center gap-1.5"
+                  >
+                    <AlertTriangle size={13} className="text-amber-600" />
+                    <span>Ajukan Komplain</span>
+                  </Button>
+                )}
+
+                {currentStatus === 'SELESAI' && !hasBuyerRated && (
                   <div className="w-full pt-2">
                     <RatingForm
                       transactionType="PRODUCT_PURCHASE"
@@ -923,7 +990,7 @@ function OrderCard({
                   </div>
                 )}
 
-                {hasBuyerRated && (
+                {currentStatus === 'SELESAI' && hasBuyerRated && (
                   <div className="flex items-center gap-2 text-gr-up text-xs font-mono font-bold uppercase tracking-wider">
                     <CheckCircle2 size={16} />
                     <span>Rating Telah Dikirim</span>
@@ -978,6 +1045,86 @@ function OrderCard({
         <span>{isExpanded ? 'Sembunyikan Detail' : 'Detail Pesanan'}</span>
         <span className="text-[9px]">{isExpanded ? '▲' : '▼'}</span>
       </button>
+
+      {/* Modal Ajukan Komplain */}
+      {showComplaintModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="w-full max-w-md bg-white rounded-sm border border-gr-line p-6 shadow-xl space-y-4"
+          >
+            <div className="space-y-1">
+              <h3 className="font-display text-xl font-bold text-gr-ink flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                Ajukan Komplain Pesanan
+              </h3>
+              <p className="font-sans text-xs text-gr-ink-soft">
+                Sampaikan keluhan barang yang diterima untuk peninjauan sengketa oleh penengah/admin.
+              </p>
+            </div>
+
+            <form onSubmit={handleFileComplaint} className="space-y-4 pt-2">
+              <div className="space-y-1.5">
+                <label className="block font-mono text-xs font-bold uppercase tracking-wider text-gr-ink">
+                  Alasan Komplain
+                </label>
+                <select
+                  value={complaintReason}
+                  onChange={(e) => setComplaintReason(e.target.value)}
+                  className="w-full border border-gr-line rounded-sm p-2.5 text-xs font-sans bg-white focus:outline-none focus:border-gr-board"
+                >
+                  <option value="BARANG_RUSAK">Barang Rusak / Busuk / Cacat</option>
+                  <option value="TIDAK_SESUAI_DESKRIPSI">Tidak Sesuai Deskripsi / Varietas</option>
+                  <option value="KUALITAS_BURUK">Kualitas Buruk / Berat Kurang</option>
+                  <option value="LAINNYA">Lainnya</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block font-mono text-xs font-bold uppercase tracking-wider text-gr-ink">
+                  Detail Keluhan
+                </label>
+                <textarea
+                  required
+                  rows={4}
+                  value={complaintDescription}
+                  onChange={(e) => setComplaintDescription(e.target.value)}
+                  placeholder="Jelaskan permasalahan pesanan yang Anda terima secara rinci..."
+                  className="w-full border border-gr-line rounded-sm p-2.5 text-xs font-sans focus:outline-none focus:border-gr-board resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-gr-line">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setShowComplaintModal(false)}
+                  disabled={isSubmittingComplaint}
+                  className="border border-gr-line font-mono text-xs font-bold uppercase tracking-wider px-4 py-2 cursor-pointer"
+                >
+                  Batal
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmittingComplaint}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs font-bold uppercase tracking-wider px-5 py-2 cursor-pointer flex items-center gap-2"
+                >
+                  {isSubmittingComplaint ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Mengirim...
+                    </>
+                  ) : (
+                    'Kirim Komplain'
+                  )}
+                </Button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
     </motion.div>
   );
 }

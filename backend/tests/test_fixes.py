@@ -183,11 +183,11 @@ async def test_confirm_order_success_releases_escrow(mock_create_disbursement, t
 
     assert res.status_code == 200
     res_data = res.json()
-    assert res_data["status"] == OrderStatus.SELESAI.value
+    assert res_data["status"] == OrderStatus.DITERIMA.value
     assert res_data["escrow_status"] == EscrowStatus.RELEASED.value
 
     await db.refresh(order)
-    assert order.status == OrderStatus.SELESAI
+    assert order.status == OrderStatus.DITERIMA
     assert order.escrow_status == EscrowStatus.RELEASED
     assert order.disbursement_id == "disb-9999"
 
@@ -207,3 +207,200 @@ async def test_scheduler_expires_demand_requests(test_fixes_context):
 
     await db.refresh(demand)
     assert demand.status == DemandRequestStatus.KEDALUWARSA
+
+# Test Prioritas 1 HTTP endpoint: POST /orders/{id}/resolve-dispute
+async def test_resolve_dispute_endpoint_http(test_fixes_context):
+    db, buyer, farmer, product, demand = test_fixes_context
+    from app.config import settings
+    from app.models.order import ComplaintReason
+
+    order = Order(
+        id=uuid.uuid4(),
+        product_id=product.id,
+        buyer_id=buyer.id,
+        quantity_kg=5.0,
+        status=OrderStatus.KOMPLAIN_DIPROSES,
+        payment_status=PaymentStatus.PAID,
+        escrow_status=EscrowStatus.DISPUTED,
+        complaint_reason=ComplaintReason.BARANG_RUSAK,
+        complaint_description="Barang rusak"
+    )
+    db.add(order)
+    await db.commit()
+    await db.refresh(order)
+
+    async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        # 1. Unauthorized if no admin token
+        res_unauth = await ac.post(
+            f"/orders/{order.id}/resolve-dispute",
+            json={"action": "RELEASE_SELLER", "admin_note": "Approved"}
+        )
+        assert res_unauth.status_code == 401
+
+        # 2. Success with X-Admin-Token header
+        res_release = await ac.post(
+            f"/orders/{order.id}/resolve-dispute",
+            headers={"X-Admin-Token": settings.ADMIN_TOKEN},
+            json={"action": "RELEASE_SELLER", "admin_note": "Seller verified valid"}
+        )
+        assert res_release.status_code == 200
+        data_release = res_release.json()
+        assert data_release["status"] == OrderStatus.SELESAI.value
+
+    await db.refresh(order)
+    assert order.status == OrderStatus.SELESAI
+
+    # Test REFUND_BUYER
+    order_refund = Order(
+        id=uuid.uuid4(),
+        product_id=product.id,
+        buyer_id=buyer.id,
+        quantity_kg=5.0,
+        status=OrderStatus.KOMPLAIN_DIPROSES,
+        payment_status=PaymentStatus.PAID,
+        escrow_status=EscrowStatus.DISPUTED,
+        complaint_reason=ComplaintReason.BARANG_RUSAK,
+        complaint_description="Barang rusak"
+    )
+    db.add(order_refund)
+    await db.commit()
+
+    async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        res_refund = await ac.post(
+            f"/orders/{order_refund.id}/resolve-dispute",
+            headers={"X-Admin-Token": settings.ADMIN_TOKEN},
+            json={"action": "REFUND_BUYER", "admin_note": "Buyer complaint accepted"}
+        )
+        assert res_refund.status_code == 200
+        data_refund = res_refund.json()
+        assert data_refund["status"] == OrderStatus.DIBATALKAN.value
+        assert data_refund["escrow_status"] == EscrowStatus.REFUNDED.value
+
+    await db.refresh(order_refund)
+    assert order_refund.status == OrderStatus.DIBATALKAN
+    assert order_refund.escrow_status == EscrowStatus.REFUNDED
+
+# Test Prioritas 2: Reject match when demand request is already fully committed
+async def test_demand_match_when_already_fulfilled_rejected(test_fixes_context):
+    db, buyer, farmer, product, demand = test_fixes_context
+
+    # Demand request is already 100% committed
+    demand.quantity_kg_committed = demand.quantity_kg_needed
+    demand.status = DemandRequestStatus.TERPENUHI
+    db.add(demand)
+    await db.commit()
+
+    app.dependency_overrides[auth_service.get_current_user] = lambda: buyer
+
+    async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.post(
+            f"/demand-requests/{demand.id}/match",
+            json={"product_id": str(product.id)}
+        )
+
+    # Must return 400 error (Permintaan sudah terpenuhi sepenuhnya)
+    assert res.status_code == 400
+    assert "terpenuhi sepenuhnya" in res.json()["detail"].lower()
+
+    app.dependency_overrides.clear()
+
+# Test Rating Validation: Only SELESAI / TERPENUHI status allowed
+async def test_rating_validation_only_selesai_allowed(test_fixes_context):
+    db, buyer, farmer, product, demand = test_fixes_context
+
+    # 1. Test PRODUCT_PURCHASE via HTTP endpoint
+    order = Order(
+        id=uuid.uuid4(),
+        product_id=product.id,
+        buyer_id=buyer.id,
+        quantity_kg=5.0,
+        status=OrderStatus.DITERIMA,
+        payment_status=PaymentStatus.PAID,
+        escrow_status=EscrowStatus.RELEASED
+    )
+    db.add(order)
+    await db.commit()
+
+    app.dependency_overrides[auth_service.get_current_user] = lambda: buyer
+
+    async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        # A. At status DITERIMA -> must be rejected with 400
+        res_diterima = await ac.post("/ratings", json={
+            "transaction_type": "PRODUCT_PURCHASE",
+            "reference_id": str(order.id),
+            "score": 5,
+            "comment": "Bagus saat diterima"
+        })
+        assert res_diterima.status_code == 400
+        assert "Rating hanya dapat diberikan setelah transaksi benar-benar selesai." in res_diterima.json()["detail"]
+
+        # B. At status KOMPLAIN_DIPROSES -> must be rejected with 400
+        order.status = OrderStatus.KOMPLAIN_DIPROSES
+        db.add(order)
+        await db.commit()
+
+        res_komplain = await ac.post("/ratings", json={
+            "transaction_type": "PRODUCT_PURCHASE",
+            "reference_id": str(order.id),
+            "score": 5,
+            "comment": "Bagus saat komplain"
+        })
+        assert res_komplain.status_code == 400
+
+        # C. At status SELESAI -> must succeed with 200
+        order.status = OrderStatus.SELESAI
+        db.add(order)
+        await db.commit()
+
+        res_selesai = await ac.post("/ratings", json={
+            "transaction_type": "PRODUCT_PURCHASE",
+            "reference_id": str(order.id),
+            "score": 5,
+            "comment": "Bagus setelah selesai!"
+        })
+        assert res_selesai.status_code == 200
+        assert res_selesai.json()["score"] == 5
+
+    # 2. Test DEMAND_FULFILLMENT via HTTP endpoint
+    # Create commitment from farmer to demand
+    commitment = SupplyCommitment(
+        id=uuid.uuid4(),
+        demand_request_id=demand.id,
+        petani_id=farmer.id,
+        quantity_kg_committed=50.0
+    )
+    db.add(commitment)
+    demand.status = DemandRequestStatus.TERBUKA
+    db.add(demand)
+    await db.commit()
+
+    app.dependency_overrides[auth_service.get_current_user] = lambda: farmer
+
+    async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        # A. At status TERBUKA -> must be rejected with 400
+        res_open = await ac.post("/ratings", json={
+            "transaction_type": "DEMAND_FULFILLMENT",
+            "reference_id": str(demand.id),
+            "score": 5,
+            "comment": "Buyer ok"
+        })
+        assert res_open.status_code == 400
+        assert "Rating hanya dapat diberikan setelah transaksi benar-benar selesai." in res_open.json()["detail"]
+
+        # B. At status TERPENUHI -> must succeed with 200
+        demand.status = DemandRequestStatus.TERPENUHI
+        db.add(demand)
+        await db.commit()
+
+        res_fulfilled = await ac.post("/ratings", json={
+            "transaction_type": "DEMAND_FULFILLMENT",
+            "reference_id": str(demand.id),
+            "score": 5,
+            "comment": "Buyer sangat ramah dan pembayaran lancar!"
+        })
+        assert res_fulfilled.status_code == 200
+        assert res_fulfilled.json()["score"] == 5
+
+    app.dependency_overrides.clear()
+
+

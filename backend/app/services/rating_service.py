@@ -34,7 +34,7 @@ async def create_rating(
         
         # Verify order status is SELESAI
         if order.status != OrderStatus.SELESAI:
-            raise HTTPException(status_code=400, detail="Transaksi belum selesai")
+            raise HTTPException(status_code=400, detail="Rating hanya dapat diberikan setelah transaksi benar-benar selesai.")
 
         # Get product to find seller
         stmt_prod = select(Product).where(Product.id == order.product_id)
@@ -56,7 +56,7 @@ async def create_rating(
         
         # Verify demand request status is TERPENUHI
         if req.status != DemandRequestStatus.TERPENUHI:
-            raise HTTPException(status_code=400, detail="Permintaan belum terpenuhi")
+            raise HTTPException(status_code=400, detail="Rating hanya dapat diberikan setelah transaksi benar-benar selesai.")
         
         # Verify rater is a farmer who has a commitment to this demand
         stmt_commit = select(SupplyCommitment).where(
