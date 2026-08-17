@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { authApi } from '@/lib/api/auth';
@@ -37,7 +38,12 @@ import { formatWIBDate } from '@/lib/utils/date';
 
 export default function AdminDisputesPage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<any | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
   const [isForbidden, setIsForbidden] = useState<boolean>(false);
   const [forbiddenMessage, setForbiddenMessage] = useState<string | null>(null);
@@ -554,13 +560,20 @@ export default function AdminDisputesPage() {
       </div>
 
       {/* MODAL EKSEKUSI RESOLUSI SENGKETA */}
-      {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+      {mounted && selectedOrder && createPortal(
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="w-full max-w-xl bg-white rounded-sm border border-gr-line p-6 shadow-2xl space-y-5"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => !isSubmitting && setSelectedOrder(null)}
+            className="fixed inset-0 bg-[#201D16]/65 backdrop-blur-xs cursor-pointer"
+          />
+          <motion.div
+            initial={{ scale: 0.96, y: 15, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.96, y: 15, opacity: 0 }}
+            className="z-10 w-full max-w-xl bg-white rounded-none border border-gr-ink/80 p-6 shadow-2xl space-y-5"
           >
             <div className="space-y-1 border-b border-gr-line pb-4">
               <div className="flex items-center justify-between">
@@ -578,7 +591,7 @@ export default function AdminDisputesPage() {
             </div>
 
             {/* Transaction Brief */}
-            <div className="p-3 bg-gr-paper border border-gr-line rounded-sm text-xs space-y-1 font-sans">
+            <div className="p-3 bg-gr-paper border border-gr-line rounded-none text-xs space-y-1 font-sans">
               <div className="flex justify-between">
                 <span className="text-gr-ink-soft">Produk:</span>
                 <span className="font-bold text-gr-ink">{selectedOrder.product_name} ({selectedOrder.quantity_kg} KG)</span>
@@ -660,13 +673,13 @@ export default function AdminDisputesPage() {
                   value={adminNote}
                   onChange={(e) => setAdminNote(e.target.value)}
                   placeholder="Catatan hasil diskusi dengan pembeli dan petani terkait keputusan..."
-                  className="w-full border border-gr-line rounded-sm p-2.5 text-xs font-sans focus:outline-none focus:border-gr-board resize-none"
+                  className="w-full border border-gr-line rounded-none p-2.5 text-xs font-sans focus:outline-none focus:border-gr-board resize-none"
                 />
               </div>
 
               {/* Error Box */}
               {resolveError && (
-                <div className="p-3 bg-red-50 text-red-900 border border-red-200 rounded-sm text-xs flex items-start gap-2">
+                <div className="p-3 bg-red-50 text-red-900 border border-red-200 rounded-none text-xs flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
                   <span className="font-sans">{resolveError}</span>
                 </div>
@@ -679,7 +692,7 @@ export default function AdminDisputesPage() {
                   variant="ghost"
                   onClick={() => setSelectedOrder(null)}
                   disabled={isSubmitting}
-                  className="border border-gr-line font-mono text-xs font-bold uppercase tracking-wider px-4 py-2 cursor-pointer"
+                  className="border border-gr-line font-mono text-xs font-bold uppercase tracking-wider px-4 py-2 cursor-pointer rounded-none"
                 >
                   Batal
                 </Button>
@@ -687,7 +700,7 @@ export default function AdminDisputesPage() {
                   type="submit"
                   disabled={isSubmitting}
                   className={cn(
-                    "text-white font-mono text-xs font-bold uppercase tracking-wider px-5 py-2 cursor-pointer flex items-center gap-2 shadow-xs",
+                    "text-white font-mono text-xs font-bold uppercase tracking-wider px-5 py-2 cursor-pointer flex items-center gap-2 shadow-xs rounded-none",
                     resolveAction === 'REFUND_BUYER'
                       ? "bg-red-700 hover:bg-red-800"
                       : "bg-emerald-700 hover:bg-emerald-800"
@@ -705,7 +718,8 @@ export default function AdminDisputesPage() {
               </div>
             </form>
           </motion.div>
-        </div>
+        </div>,
+        document.body
       )}
     </main>
   );

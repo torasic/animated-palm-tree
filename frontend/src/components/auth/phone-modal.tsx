@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { authApi } from '@/lib/api/auth';
 import { Phone, X, Loader2 } from 'lucide-react';
@@ -12,11 +13,16 @@ interface PhoneModalProps {
 }
 
 export function PhoneModal({ isOpen, onClose, onSuccess }: PhoneModalProps) {
+  const [mounted, setMounted] = useState(false);
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!isOpen || !mounted) return null;
 
   const validatePhone = (num: string) => {
     const cleaned = num.replace(/[\s\-()]/g, '');
@@ -48,11 +54,11 @@ export function PhoneModal({ isOpen, onClose, onSuccess }: PhoneModalProps) {
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        className="fixed inset-0 bg-[#201D16]/65 backdrop-blur-xs cursor-pointer"
         onClick={() => !loading && onClose()}
       />
 
@@ -132,6 +138,7 @@ export function PhoneModal({ isOpen, onClose, onSuccess }: PhoneModalProps) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
