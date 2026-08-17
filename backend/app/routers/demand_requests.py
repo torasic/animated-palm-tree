@@ -243,7 +243,15 @@ async def list_committed_demand_requests(
     record_ids = [req.id for req in records]
     dt_map = {}
     if record_ids:
-        stmt_txs = select(DemandTransaction).options(joinedload(DemandTransaction.seller)).where(DemandTransaction.demand_request_id.in_(record_ids))
+        if current_user.role == UserRole.PETANI:
+            stmt_txs = select(DemandTransaction).options(joinedload(DemandTransaction.seller)).where(
+                DemandTransaction.demand_request_id.in_(record_ids),
+                DemandTransaction.seller_id == current_user.id
+            )
+        else:
+            stmt_txs = select(DemandTransaction).options(joinedload(DemandTransaction.seller)).where(
+                DemandTransaction.demand_request_id.in_(record_ids)
+            )
         res_txs = await db.execute(stmt_txs)
         for dt in res_txs.scalars().all():
             dt_map[dt.demand_request_id] = dt
