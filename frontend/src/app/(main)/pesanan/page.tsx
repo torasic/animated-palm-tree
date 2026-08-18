@@ -13,7 +13,7 @@ import { RatingForm } from '@/components/ratings/rating-form';
 import { BgPattern } from '@/components/effects/bg-pattern';
 import { RatingBadge } from '@/components/ratings/rating-badge';
 import { FilmGrain } from '@/components/effects/film-grain';
-import { Package, Clock, CheckCircle2, Truck, XCircle, Loader2, ShoppingBag, ClipboardList, Tag, Trash2, AlertTriangle, ShieldCheck, ShieldAlert, History, CreditCard, Banknote, User, Users, Edit, MessageSquare, Key, Lock } from 'lucide-react';
+import { Package, Clock, CheckCircle2, Truck, XCircle, Loader2, ShoppingBag, ClipboardList, Tag, Trash2, AlertTriangle, ShieldCheck, ShieldAlert, History, CreditCard, Banknote, User, Users, Edit, MessageSquare, Key, Lock, Store } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
@@ -1207,6 +1207,10 @@ function DemandCard({
   const currentCommitted = liveData?.quantity_kg_committed !== undefined ? liveData.quantity_kg_committed : demand.quantity_kg_committed;
   const router = useRouter();
   const [chatLoading, setChatLoading] = useState(false);
+  const [updatingFulfillment, setUpdatingFulfillment] = useState(false);
+  const [confirmingReceived, setConfirmingReceived] = useState(false);
+  const [confirmFulfillmentModal, setConfirmFulfillmentModal] = useState<'SIAP_DIANTAR' | 'SIAP_DIAMBIL' | null>(null);
+  const [confirmReceivedModal, setConfirmReceivedModal] = useState(false);
 
   const handleContactPetani = async (petaniId: string) => {
     try {
@@ -1246,7 +1250,37 @@ function DemandCard({
     ...demand.match_transaction,
     payment_status: liveData?.payment_status || demand.match_transaction.payment_status,
     escrow_status: liveData?.escrow_status || demand.match_transaction.escrow_status,
+    fulfillment_status: liveData?.fulfillment_status || demand.match_transaction.fulfillment_status || 'DIPROSES',
+    marked_ready_at: liveData?.marked_ready_at || demand.match_transaction.marked_ready_at,
   } : null;
+
+  const handleUpdateFulfillment = async (targetStatus: 'SIAP_DIANTAR' | 'SIAP_DIAMBIL') => {
+    if (!matchedTx) return;
+    try {
+      setUpdatingFulfillment(true);
+      await demandRequestsApi.updateFulfillmentStatus(demand.id, targetStatus, matchedTx.id);
+      onUpdate();
+    } catch (err: any) {
+      alert(err.message || 'Gagal memperbarui status kesiapan produk');
+    } finally {
+      setUpdatingFulfillment(false);
+      setConfirmFulfillmentModal(null);
+    }
+  };
+
+  const handleConfirmReceived = async () => {
+    if (!matchedTx) return;
+    try {
+      setConfirmingReceived(true);
+      await demandRequestsApi.confirmDemandReceived(demand.id, matchedTx.id);
+      onUpdate();
+    } catch (err: any) {
+      alert(err.message || 'Gagal mengonfirmasi penerimaan barang');
+    } finally {
+      setConfirmingReceived(false);
+      setConfirmReceivedModal(false);
+    }
+  };
 
   const getStatusConfig = (status: string, hasMatch: boolean) => {
     if (hasMatch) {
@@ -1348,6 +1382,40 @@ function DemandCard({
                       {matchedTx.escrow_status === 'disputed' && 'SENGKETA'}
                     </span>
                   )}
+                  {matchedTx.payment_status === 'paid' && (
+                    <span className={cn(
+                      "font-bold px-2 py-0.5 rounded-xs border flex items-center gap-1",
+                      matchedTx.fulfillment_status === 'SIAP_DIANTAR' && "bg-blue-600/10 text-blue-800 border-blue-600/30",
+                      matchedTx.fulfillment_status === 'SIAP_DIAMBIL' && "bg-emerald-600/10 text-emerald-800 border-emerald-600/30",
+                      matchedTx.fulfillment_status === 'SELESAI' && "bg-gr-up/10 text-gr-up border-gr-up/20",
+                      (!matchedTx.fulfillment_status || matchedTx.fulfillment_status === 'DIPROSES') && "bg-amber-500/10 text-amber-700 border-amber-500/20"
+                    )}>
+                      {matchedTx.fulfillment_status === 'SIAP_DIANTAR' && (
+                        <>
+                          <Truck size={10} />
+                          <span>SIAP DIANTAR</span>
+                        </>
+                      )}
+                      {matchedTx.fulfillment_status === 'SIAP_DIAMBIL' && (
+                        <>
+                          <Store size={10} />
+                          <span>SIAP DIAMBIL</span>
+                        </>
+                      )}
+                      {matchedTx.fulfillment_status === 'SELESAI' && (
+                        <>
+                          <CheckCircle2 size={10} />
+                          <span>SELESAI</span>
+                        </>
+                      )}
+                      {(!matchedTx.fulfillment_status || matchedTx.fulfillment_status === 'DIPROSES') && (
+                        <>
+                          <Clock size={10} />
+                          <span>SEDANG DISIAPKAN</span>
+                        </>
+                      )}
+                    </span>
+                  )}
                 </div>
               </div>
             ) : (
@@ -1387,6 +1455,140 @@ function DemandCard({
             transition={{ duration: 0.2 }}
             className="border-t border-gr-line p-5 md:p-6 space-y-6"
           >
+            {/* Fulfillment Status Banner & Actions */}
+            {matchedTx && matchedTx.payment_status === 'paid' && (
+              <div className="rounded-sm border border-gr-line bg-[#FAF9F5] p-4 space-y-3">
+                {role === 'PETANI' ? (
+                  matchedTx.escrow_status === 'released' || matchedTx.fulfillment_status === 'SELESAI' ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-gr-up font-mono text-xs font-bold uppercase tracking-wider">
+                        <CheckCircle2 size={16} className="shrink-0" />
+                        <span>Transaksi Selesai & Dana Telah Dicairkan</span>
+                      </div>
+                      <p className="font-sans text-xs text-gr-ink-soft">
+                        Pembeli telah mengonfirmasi penerimaan barang. Dana escrow telah berhasil dicairkan ke rekening Anda.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gr-line/40 pb-3">
+                        <div>
+                          <span className="font-mono text-[9px] uppercase tracking-widest text-gr-board font-bold block">
+                            Konfirmasi Kesiapan Produk
+                          </span>
+                          <p className="font-sans text-xs text-gr-ink mt-0.5">
+                            {matchedTx.fulfillment_status === 'SIAP_DIANTAR'
+                              ? '✅ Anda telah mengonfirmasi bahwa produk siap diantar ke pembeli.'
+                              : matchedTx.fulfillment_status === 'SIAP_DIAMBIL'
+                              ? '✅ Anda telah mengonfirmasi bahwa produk siap diambil di lokasi Anda.'
+                              : 'Pembeli telah membayar lunas (Dana aman di Rekber). Konfirmasikan kesiapan hasil panen:'}
+                          </p>
+                        </div>
+                        {matchedTx.marked_ready_at && (
+                          <span className="font-mono text-[10px] text-gr-ink-soft">
+                            Update: {formatWIBDate(matchedTx.marked_ready_at)}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <button
+                          type="button"
+                          disabled={updatingFulfillment}
+                          onClick={() => setConfirmFulfillmentModal('SIAP_DIANTAR')}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3.5 py-2 rounded-sm font-mono text-[11px] uppercase font-bold tracking-wider transition-all cursor-pointer border",
+                            matchedTx.fulfillment_status === 'SIAP_DIANTAR'
+                              ? "bg-blue-700 text-white border-blue-700 shadow-xs"
+                              : "bg-white hover:bg-blue-50 text-blue-900 border-blue-300"
+                          )}
+                        >
+                          <Truck size={14} />
+                          <span>{matchedTx.fulfillment_status === 'SIAP_DIANTAR' ? 'Siap Diantar (Aktif)' : 'Siap Diantar'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={updatingFulfillment}
+                          onClick={() => setConfirmFulfillmentModal('SIAP_DIAMBIL')}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3.5 py-2 rounded-sm font-mono text-[11px] uppercase font-bold tracking-wider transition-all cursor-pointer border",
+                            matchedTx.fulfillment_status === 'SIAP_DIAMBIL'
+                              ? "bg-emerald-700 text-white border-emerald-700 shadow-xs"
+                              : "bg-white hover:bg-emerald-50 text-emerald-900 border-emerald-300"
+                          )}
+                        >
+                          <Store size={14} />
+                          <span>{matchedTx.fulfillment_status === 'SIAP_DIAMBIL' ? 'Siap Diambil (Aktif)' : 'Siap Diambil'}</span>
+                        </button>
+
+                        {updatingFulfillment && <Loader2 className="h-4 w-4 animate-spin text-gr-board" />}
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="space-y-3">
+                    {matchedTx.fulfillment_status === 'SIAP_DIANTAR' ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-blue-900 font-mono text-xs font-bold uppercase tracking-wider">
+                          <Truck size={16} className="text-blue-700 shrink-0" />
+                          <span>Info Pengantaran: Produk Siap Diantar</span>
+                        </div>
+                        <p className="font-sans text-xs text-gr-ink leading-relaxed">
+                          Petani telah mengonfirmasi bahwa produk hasil panen siap diantar ke lokasi Anda. Silakan koordinasi jadwal pengantaran via chat.
+                        </p>
+                      </div>
+                    ) : matchedTx.fulfillment_status === 'SIAP_DIAMBIL' ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-emerald-900 font-mono text-xs font-bold uppercase tracking-wider">
+                          <Store size={16} className="text-emerald-700 shrink-0" />
+                          <span>Info Pengambilan: Produk Siap Diambil</span>
+                        </div>
+                        <p className="font-sans text-xs text-gr-ink leading-relaxed">
+                          Petani telah mengonfirmasi bahwa hasil panen sudah siap diambil di lokasi petani. Silakan hubungi petani untuk mengatur waktu pengambilan.
+                        </p>
+                      </div>
+                    ) : matchedTx.escrow_status === 'released' ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-gr-up font-mono text-xs font-bold uppercase tracking-wider">
+                          <CheckCircle2 size={16} className="shrink-0" />
+                          <span>Transaksi Selesai</span>
+                        </div>
+                        <p className="font-sans text-xs text-gr-ink-soft">
+                          Barang telah diterima dan dana escrow telah berhasil dicairkan ke petani.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-amber-900 font-mono text-xs font-bold uppercase tracking-wider">
+                          <Clock size={16} className="text-amber-700 shrink-0 animate-pulse" />
+                          <span>Menunggu Kesiapan Petani</span>
+                        </div>
+                        <p className="font-sans text-xs text-gr-ink-soft leading-relaxed">
+                          Pembayaran Anda telah aman di Rekening Bersama. Petani sedang menyiapkan produk dan akan segera mengonfirmasi saat siap diantar atau diambil.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Action button for buyer to confirm received */}
+                    {matchedTx.escrow_status === 'held' && (matchedTx.fulfillment_status === 'SIAP_DIANTAR' || matchedTx.fulfillment_status === 'SIAP_DIAMBIL') && (
+                      <div className="pt-2 border-t border-gr-line/40 flex justify-end">
+                        <Button
+                          type="button"
+                          disabled={confirmingReceived}
+                          onClick={() => setConfirmReceivedModal(true)}
+                          className="bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-xs font-bold uppercase tracking-wider px-4 py-2.5 rounded-sm cursor-pointer flex items-center gap-1.5"
+                        >
+                          {confirmingReceived ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 size={14} />}
+                          <span>Konfirmasi Penerimaan Barang</span>
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <div className="space-y-3">
@@ -1534,6 +1736,69 @@ function DemandCard({
         <span>{isExpanded ? 'Sembunyikan Detail' : 'Detail Permintaan'}</span>
         <span className="text-[9px]">{isExpanded ? '▲' : '▼'}</span>
       </button>
+
+      {/* Confirmation Modals */}
+      {confirmFulfillmentModal && (
+        <ConfirmModal
+          isOpen={!!confirmFulfillmentModal}
+          onClose={() => setConfirmFulfillmentModal(null)}
+          onConfirm={() => handleUpdateFulfillment(confirmFulfillmentModal)}
+          title={confirmFulfillmentModal === 'SIAP_DIANTAR' ? 'Konfirmasi Siap Diantar' : 'Konfirmasi Siap Diambil'}
+          confirmText="Ya, Konfirmasi"
+          cancelText="Batal"
+          variant="info"
+          isLoading={updatingFulfillment}
+          description={
+            <div className="space-y-2">
+              <p className="font-sans text-xs text-gr-ink-soft leading-relaxed">
+                {confirmFulfillmentModal === 'SIAP_DIANTAR'
+                  ? 'Apakah Anda yakin ingin menandai bahwa produk hasil panen siap diantar ke pembeli? Status ini akan langsung diinfokan ke pembeli.'
+                  : 'Apakah Anda yakin ingin menandai bahwa produk sudah siap untuk diambil pembeli di lokasi Anda? Status ini akan langsung diinfokan ke pembeli.'}
+              </p>
+              <div className="bg-[#FAF9F5] border border-gr-line p-3 rounded-xs font-mono text-[10px] space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gr-text-primary/60">KOMODITAS:</span>
+                  <span className="font-bold text-gr-text-primary uppercase">{demand.commodity_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gr-text-primary/60">VOLUME:</span>
+                  <span className="font-bold text-gr-text-primary">{matchedTx?.quantity_kg} KG</span>
+                </div>
+              </div>
+            </div>
+          }
+        />
+      )}
+
+      {confirmReceivedModal && (
+        <ConfirmModal
+          isOpen={confirmReceivedModal}
+          onClose={() => setConfirmReceivedModal(false)}
+          onConfirm={handleConfirmReceived}
+          title="Konfirmasi Penerimaan Barang"
+          confirmText="Ya, Terima & Cairkan Dana"
+          cancelText="Batal"
+          variant="info"
+          isLoading={confirmingReceived}
+          description={
+            <div className="space-y-2">
+              <p className="font-sans text-xs text-gr-ink-soft leading-relaxed">
+                Apakah Anda telah menerima seluruh pesanan hasil panen ini dengan baik? Konfirmasi ini akan menyelesaikan transaksi dan mencairkan dana dari Rekening Bersama (Escrow) ke petani.
+              </p>
+              <div className="bg-[#FAF9F5] border border-gr-line p-3 rounded-xs font-mono text-[10px] space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gr-text-primary/60">KOMODITAS:</span>
+                  <span className="font-bold text-gr-text-primary uppercase">{demand.commodity_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gr-text-primary/60">TOTAL DANA DICAIRKAN:</span>
+                  <span className="font-bold text-gr-green">Rp {Math.round(matchedTx?.amount || 0).toLocaleString('id-ID')}</span>
+                </div>
+              </div>
+            </div>
+          }
+        />
+      )}
     </motion.div>
   );
 }

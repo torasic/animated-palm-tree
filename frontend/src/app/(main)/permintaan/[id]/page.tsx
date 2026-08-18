@@ -8,7 +8,7 @@ import { BASE_URL, WS_BASE_URL } from '@/lib/api/client';
 import { BgPattern } from '@/components/effects/bg-pattern';
 import { FilmGrain } from '@/components/effects/film-grain';
 import { Glow } from '@/components/effects/glow';
-import { ArrowLeft, Calendar, Loader2, ClipboardCheck, Users, MapPin, Tag, CheckCircle, Info, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Calendar, Loader2, ClipboardCheck, Users, MapPin, Tag, CheckCircle, CheckCircle2, Info, MessageSquare, Truck, Store, Clock } from 'lucide-react';
 import { reverseGeocode as fetchAddress } from '@/lib/utils/geocode';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -419,6 +419,25 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
     }
   };
 
+  const [updatingFulfillmentTxId, setUpdatingFulfillmentTxId] = useState<string | null>(null);
+
+  const handleUpdateFulfillment = async (txId: string, targetStatus: 'SIAP_DIANTAR' | 'SIAP_DIAMBIL') => {
+    try {
+      setUpdatingFulfillmentTxId(txId);
+      setError('');
+      await demandRequestsApi.updateFulfillmentStatus(id, targetStatus, txId);
+      const updatedData = await demandRequestsApi.getDemandRequestById(id);
+      if (updatedData) {
+        setRequest(updatedData);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Gagal memperbarui status kesiapan produk');
+    } finally {
+      setUpdatingFulfillmentTxId(null);
+    }
+  };
+
   const handleCancelTransaction = async () => {
     if (!confirmCancelTx) return;
     const txId = confirmCancelTx.id;
@@ -794,17 +813,53 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
                           </div>
                         </div>
 
-                        {/* Escrow status pill */}
+                        {/* Escrow status pill & Fulfillment info */}
                         {tx.escrow_status && tx.escrow_status !== 'not_started' && (
                           <div className={cn(
                             "text-center py-2 px-3 rounded-xs text-[10px] font-mono font-bold uppercase tracking-wider border",
-                            tx.escrow_status === 'held' && "bg-gr-down/10 text-gr-down border-gr-down/20",
+                            tx.escrow_status === 'held' && "bg-amber-500/10 text-amber-800 border-amber-500/20",
                             tx.escrow_status === 'released' && "bg-gr-up/10 text-gr-up border-gr-up/20",
                             tx.escrow_status === 'disputed' && "bg-gr-down/10 text-gr-down border-gr-down/20"
                           )}>
                             {tx.escrow_status === 'held' && 'Dana Diamankan (Rekber)'}
                             {tx.escrow_status === 'released' && 'Dana Dicairkan'}
                             {tx.escrow_status === 'disputed' && 'Sengketa — Ditangguhkan'}
+                          </div>
+                        )}
+
+                        {tx.payment_status === 'paid' && tx.escrow_status === 'held' && (
+                          <div className="p-3 rounded-xs border border-gr-line bg-[#FAF9F5] space-y-1.5">
+                            {tx.fulfillment_status === 'SIAP_DIANTAR' ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 text-blue-900 font-mono text-[10px] font-bold uppercase tracking-wider">
+                                  <Truck size={14} className="text-blue-700 shrink-0" />
+                                  <span>Produk Siap Diantar Petani</span>
+                                </div>
+                                <p className="font-sans text-[11px] text-gr-ink-soft leading-tight">
+                                  Petani telah mengonfirmasi bahwa produk siap diantar ke lokasi Anda.
+                                </p>
+                              </div>
+                            ) : tx.fulfillment_status === 'SIAP_DIAMBIL' ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 text-emerald-900 font-mono text-[10px] font-bold uppercase tracking-wider">
+                                  <Store size={14} className="text-emerald-700 shrink-0" />
+                                  <span>Produk Siap Diambil</span>
+                                </div>
+                                <p className="font-sans text-[11px] text-gr-ink-soft leading-tight">
+                                  Produk sudah siap untuk diambil di lokasi petani.
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 text-amber-900 font-mono text-[10px] font-bold uppercase tracking-wider">
+                                  <Clock size={14} className="text-amber-700 shrink-0 animate-pulse" />
+                                  <span>Menunggu Kesiapan Petani</span>
+                                </div>
+                                <p className="font-sans text-[11px] text-gr-ink-soft leading-tight">
+                                  Petani sedang menyiapkan produk hasil panen.
+                                </p>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -1025,6 +1080,95 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
                       </div>
                     )
             )}
+
+            {/* Farmer Readiness Action Panel for Matched Transactions */}
+            {user && user.role === 'PETANI' && (() => {
+              const myTxs = (request.match_transactions || []).filter((t: any) => t.seller_id === user.id);
+              if (myTxs.length === 0) return null;
+              return (
+                <div className="space-y-3">
+                  {myTxs.map((myTx: any) => {
+                    const isPaid = myTx.payment_status === 'paid';
+                    const isCompleted = myTx.escrow_status === 'released' || myTx.fulfillment_status === 'SELESAI';
+                    const isHeld = isPaid && myTx.escrow_status === 'held' && !isCompleted;
+                    return (
+                      <div key={myTx.id} className="rounded-sm border border-gr-line bg-white/80 p-5 space-y-3 overflow-hidden">
+                        <div className="flex items-center justify-between border-b border-gr-line/40 pb-2">
+                          <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-gr-board">
+                            Status Transaksi Supply ({myTx.quantity_kg} KG)
+                          </span>
+                          <span className={cn(
+                            "font-mono text-[9px] font-bold uppercase px-2 py-0.5 rounded-xs border",
+                            isCompleted ? "bg-gr-up/10 text-gr-up border-gr-up/20" : isPaid ? "bg-amber-500/10 text-amber-700 border-amber-500/20" : "bg-gr-paper text-gr-ink-soft border-gr-line"
+                          )}>
+                            {isCompleted ? 'SELESAI (DANA DICAIRKAN)' : isPaid ? 'LUNAS (REKBER)' : 'MENUNGGU PEMBAYARAN'}
+                          </span>
+                        </div>
+
+                        {isHeld ? (
+                          <div className="space-y-3">
+                            <p className="font-sans text-xs text-gr-ink leading-relaxed">
+                              {myTx.fulfillment_status === 'SIAP_DIANTAR'
+                                ? '✅ Anda telah mengonfirmasi bahwa produk siap diantar ke pembeli.'
+                                : myTx.fulfillment_status === 'SIAP_DIAMBIL'
+                                ? '✅ Anda telah mengonfirmasi bahwa produk siap diambil di lokasi Anda.'
+                                : 'Pembeli telah membayar. Silakan konfirmasi kesiapan produk untuk pembeli:'}
+                            </p>
+
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                disabled={updatingFulfillmentTxId === myTx.id}
+                                onClick={() => handleUpdateFulfillment(myTx.id, 'SIAP_DIANTAR')}
+                                className={cn(
+                                  "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-sm font-mono text-[10px] uppercase font-bold tracking-wider transition-all cursor-pointer border",
+                                  myTx.fulfillment_status === 'SIAP_DIANTAR'
+                                    ? "bg-blue-700 text-white border-blue-700 shadow-xs"
+                                    : "bg-white hover:bg-blue-50 text-blue-900 border-blue-300"
+                                )}
+                              >
+                                <Truck size={13} />
+                                <span>{myTx.fulfillment_status === 'SIAP_DIANTAR' ? 'Siap Diantar (Aktif)' : 'Siap Diantar'}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={updatingFulfillmentTxId === myTx.id}
+                                onClick={() => handleUpdateFulfillment(myTx.id, 'SIAP_DIAMBIL')}
+                                className={cn(
+                                  "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-sm font-mono text-[10px] uppercase font-bold tracking-wider transition-all cursor-pointer border",
+                                  myTx.fulfillment_status === 'SIAP_DIAMBIL'
+                                    ? "bg-emerald-700 text-white border-emerald-700 shadow-xs"
+                                    : "bg-white hover:bg-emerald-50 text-emerald-900 border-emerald-300"
+                                )}
+                              >
+                                <Store size={13} />
+                                <span>{myTx.fulfillment_status === 'SIAP_DIAMBIL' ? 'Siap Diambil (Aktif)' : 'Siap Diambil'}</span>
+                              </button>
+                            </div>
+                            {updatingFulfillmentTxId === myTx.id && (
+                              <div className="flex items-center justify-center gap-1.5 text-xs text-gr-ink-soft font-mono">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-gr-board" />
+                                <span>Memperbarui status...</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : isCompleted ? (
+                          <div className="flex items-center gap-2 text-gr-up font-mono text-xs font-bold uppercase">
+                            <CheckCircle2 size={15} />
+                            <span>Transaksi Selesai & Dana Telah Dicairkan</span>
+                          </div>
+                        ) : (
+                          <p className="font-sans text-xs text-gr-ink-soft">
+                            Menunggu pembeli menyelesaikan pembayaran invoice escrow.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* Farmer Commitment Action Panel */}
             {user && user.role === 'PETANI' && request.status === 'TERBUKA' && (
