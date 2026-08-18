@@ -13,7 +13,7 @@ import { RatingForm } from '@/components/ratings/rating-form';
 import { BgPattern } from '@/components/effects/bg-pattern';
 import { RatingBadge } from '@/components/ratings/rating-badge';
 import { FilmGrain } from '@/components/effects/film-grain';
-import { Package, Clock, CheckCircle2, Truck, XCircle, Loader2, ShoppingBag, ClipboardList, Tag, Trash2, AlertTriangle, ShieldCheck, ShieldAlert, History, CreditCard, Banknote, User, Users, Edit, MessageSquare, Key, Lock, Store } from 'lucide-react';
+import { Package, Clock, CheckCircle2, Truck, XCircle, Loader2, ShoppingBag, ClipboardList, Tag, Trash2, AlertTriangle, ShieldCheck, ShieldAlert, History, CreditCard, Banknote, User, Users, Edit, MessageSquare, Key, Lock, Store, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
@@ -52,7 +52,8 @@ function OrdersPageContent() {
       if (tab === 'products') {
         data = await productsApi.getMyProducts();
       } else if (tab === 'demands') {
-        data = await demandRequestsApi.getCommittedDemandRequests();
+        const committedDemands = await demandRequestsApi.getCommittedDemandRequests();
+        data = (committedDemands || []).map((d: any) => ({ ...d, isDemand: true }));
       } else if (tab === 'incoming') {
         const [incomingOrders, committedDemands] = await Promise.all([
           ordersApi.getIncomingOrders(0, FETCH_LIMIT),
@@ -1443,6 +1444,16 @@ function DemandCard({
           </div>
         </div>
 
+        {/* Toggle Details Button */}
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-gr-line bg-white hover:bg-gr-paper font-mono text-xs font-bold uppercase tracking-wider text-gr-ink transition-all cursor-pointer shadow-xs"
+          >
+            <span>{isExpanded ? 'Tutup Rincian' : 'Rincian'}</span>
+            <ChevronDown size={14} className={cn("transition-transform duration-200", isExpanded && "rotate-180")} />
+          </button>
+        </div>
       </div>
 
       {/* Expanded details */}
