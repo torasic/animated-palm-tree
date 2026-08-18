@@ -15,7 +15,9 @@ import { provinceCentroids } from '@/lib/data/province-centroids';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
 
 const MapViewSkeleton = () => (
   <div className="h-full w-full min-h-[380px] bg-white/10 border border-gr-line/15 rounded-sm animate-pulse relative overflow-hidden select-none p-4 flex flex-col justify-between">
@@ -67,6 +69,7 @@ function getRelativeTime(dateString: string | null) {
 let cachedPricesData: { items: any[]; distinct_commodities: string[] } | null = null;
 
 export default function HargaPasarPage() {
+  const router = useRouter();
   // Mode selection state
   const [activeTab, setActiveTab] = useState<'pricing' | 'products' | 'demands'>('pricing');
   const [mounted, setMounted] = useState(false);
@@ -107,6 +110,9 @@ export default function HargaPasarPage() {
   const [commitErrors, setCommitErrors] = useState<Record<string | number, string>>({});
   // Submitting state for each demand (keyed by demand ID)
   const [submittingCommits, setSubmittingCommits] = useState<Record<string | number, boolean>>({});
+  // Pending commit for ConfirmModal
+  const [pendingCommit, setPendingCommit] = useState<{ demand: any; quantity: number } | null>(null);
+  const [submittingModal, setSubmittingModal] = useState<boolean>(false);
 
   // Track if user has manually selected a province to prevent override by background geolocation success
   const isManuallySelectedRef = useRef<boolean>(false);
@@ -283,7 +289,7 @@ export default function HargaPasarPage() {
     });
   }, []);
 
-  const handleIndividualCommitSubmit = async (demand: any, e: React.FormEvent) => {
+  const handleIndividualCommitSubmit = (demand: any, e: React.FormEvent) => {
     e.preventDefault();
     const qtyStr = commitQuantities[demand.id] || '';
     const qty = parseFloat(qtyStr);
@@ -304,15 +310,27 @@ export default function HargaPasarPage() {
       return;
     }
 
+    // Open confirmation modal for farmer commit
+    setPendingCommit({ demand, quantity: qty });
+  };
+
+  const handleExecuteCommit = async () => {
+    if (!pendingCommit) return;
+    const { demand, quantity: qty } = pendingCommit;
+    
+    setSubmittingModal(true);
     setSubmittingCommits((prev) => ({ ...prev, [demand.id]: true }));
     try {
       await demandRequestsApi.commitSupply(demand.id, qty);
       handleRemoveDemandFromComparison(demand.id);
-      fetchDemands(); // refresh demands list
+      setPendingCommit(null);
+      router.push('/pesanan?tab=demands');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Gagal mengirimkan komitmen';
       setCommitErrors((prev) => ({ ...prev, [demand.id]: msg }));
+      setPendingCommit(null);
     } finally {
+      setSubmittingModal(false);
       setSubmittingCommits((prev) => ({ ...prev, [demand.id]: false }));
     }
   };
@@ -1014,192 +1032,259 @@ export default function HargaPasarPage() {
  
         </div>
 
-        {/* ── Commit Right Panel — portaled to document.body */}
+        {/* ── Commit Popup Modal — portaled to document.body */}
         {mounted && comparisonDemands.length > 0 && createPortal(
-          <div
-            className="fixed top right-4 w sm:w-[385px] bg-white border border-gr-line p-5 rounded-sm  z-[9999] flex flex-col drawer-slide-in h-[calc(100vh-105px)]"
-          >
-            <style>{`
-              @keyframes slideInRight {
-                from {
-                  transform: translateX(110%);
-                  opacity: 0.8;
-                }
-                to {
-                  transform: translateX(0);
-                  opacity: 1;
-                }
-              }
-              .drawer-slide-in {
-                animation: slideInRight 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-              }
-            `}</style>
-            {/* Close Button */}
-            <button
-              type="button"
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <div
               onClick={() => setComparisonDemands([])}
-              className="absolute top-5 right-5 text-gr-ink-soft hover:text-gr-ink transition-colors cursor-pointer"
-              title="Tutup Semua"
-            >
-              <X size={18} />
-            </button>
+              className="fixed inset-0 bg-[#201D16]/65 backdrop-blur-xs cursor-pointer animate-in fade-in duration-200"
+            />
 
-            {/* Decorative Icon Header */}
-            <div className="flex items-center gap-3.5 mb-4 shrink-0">
-              <div className="flex h-11 w-11 items-center justify-center rounded-sm bg-gr-board/10 text-gr-board border border-gr-board/20">
-                <Scale size={22} className="stroke-[2.2]" />
-              </div>
-              <div>
-                <span className="font-mono text-[9px] uppercase tracking-widest text-gr-ink-soft/50 font-bold block">
-                  Perbandingan & Komitmen
-                </span>
-                <h3 className="font-display text-base font-bold text-gr-ink leading-tight">
-                  Pasokan Komoditas ({comparisonDemands.length})
+            {/* Modal Card */}
+            <div
+              className="z-10 w-full max-w-[440px] bg-gr-paper border border-gr-ink/80 p-5 rounded-none relative flex flex-col gap-3 shadow-2xl max-h-[90vh] animate-in fade-in zoom-in-95 duration-200"
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setComparisonDemands([])}
+                className="absolute top-4 right-4 text-gr-ink-soft/45 hover:text-gr-ink hover:bg-gr-ink/5 p-1.5 transition-all cursor-pointer border border-transparent hover:border-gr-ink/10"
+                title="Tutup"
+              >
+                <X size={16} className="stroke-[2.5]" />
+              </button>
+
+              {/* Header: Ticket Style matching Grove system */}
+              <div className="flex flex-col gap-1 pb-3 border-b border-dashed border-gr-line pr-7 shrink-0">
+                <div className="flex justify-between items-center font-mono text-[9px] font-bold tracking-widest">
+                  <span className="text-gr-board flex items-center gap-1.5">
+                    <Scale size={12} className="stroke-[2.5]" />
+                    // KOMITMEN PASOKAN
+                  </span>
+                  <span className="text-gr-ink-soft/50 font-medium">
+                    {comparisonDemands.length} PERMINTAAN
+                  </span>
+                </div>
+                <h3 className="font-display text-xl font-bold text-gr-ink leading-tight mt-0.5">
+                  Pasokan Komoditas
                 </h3>
               </div>
-            </div>
 
-            {/* Scrollable list of comparison demands */}
-            <div className="space-y-4 overflow-y-auto pr-1 flex-1 min-h-0">
-              {comparisonDemands.map((demand) => {
-                const remainingQty = Math.max(0, demand.quantity_kg_needed - demand.quantity_kg_committed);
-                const qtyStr = commitQuantities[demand.id] || '';
-                const errorStr = commitErrors[demand.id] || '';
-                const isSubmitting = submittingCommits[demand.id] || false;
+              {/* Scrollable list of comparison demands */}
+              <div className="space-y-4 overflow-y-auto pr-1 flex-1 min-h-0 pt-1">
+                {comparisonDemands.map((demand) => {
+                  const remainingQty = Math.max(0, demand.quantity_kg_needed - demand.quantity_kg_committed);
+                  const qtyStr = commitQuantities[demand.id] || '';
+                  const parsedQty = parseFloat(qtyStr) || 0;
+                  const estimatedTotal = Math.round(parsedQty * (demand.price_per_kg || 0));
+                  const errorStr = commitErrors[demand.id] || '';
+                  const isSubmitting = submittingCommits[demand.id] || false;
 
-                return (
-                  <div key={demand.id} className="bg-gr-paper border border-gr-line rounded-sm p-4 space-y-3 relative animate-in fade-in duration-150 ">
-                    {/* Card Header (Buyer Details & Close) */}
-                    <div className="flex justify-between items-start gap-2">
-                      <div>
-                        <span className="font-mono text uppercase tracking-wider text-gr-ink-soft/60 font-bold block mb-0.5">PEMOHON</span>
-                        <div className="flex items-center gap-1.5">
-                          <h4 className="font-display text-xs font-bold text-gr-ink leading-tight capitalize">
-                            {demand.buyer_name || 'Pembeli'}
-                          </h4>
-                          {demand.buyer_rating !== undefined && demand.buyer_rating !== null && (
-                            <div className="flex items-center gap-0.5 text-[10px] text-amber-600 shrink-0 font-bold">
-                              <Star size={10} className="fill-amber-600 text-amber-600 shrink-0" />
-                              <span>{demand.buyer_rating.toFixed(1)}</span>
-                            </div>
-                          )}
+                  return (
+                    <div key={demand.id} className="bg-white/80 border border-gr-line p-4 space-y-3 relative rounded-none shadow-xs">
+                      {/* Card Header (Buyer Details & Close) */}
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <span className="font-mono text-[8px] uppercase tracking-widest text-gr-ink-soft/60 font-bold block mb-0.5">// PEMOHON</span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="font-display text-xs font-bold text-gr-ink leading-tight capitalize truncate">
+                              {demand.buyer_name || 'Pembeli'}
+                            </h4>
+                            {demand.buyer_rating !== undefined && demand.buyer_rating !== null && (
+                              <div className="flex items-center gap-0.5 text-[10px] text-amber-600 shrink-0 font-bold">
+                                <Star size={10} className="fill-amber-600 text-amber-600 shrink-0" />
+                                <span>{demand.buyer_rating.toFixed(1)}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
+                        {comparisonDemands.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDemandFromComparison(demand.id)}
+                            className="text-gr-ink-soft/45 hover:text-gr-down hover:bg-gr-down/5 p-1 transition-all cursor-pointer border border-transparent hover:border-gr-down/10"
+                            title="Hapus dari Perbandingan"
+                          >
+                            <X size={13} className="stroke-[2.5]" />
+                          </button>
+                        )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveDemandFromComparison(demand.id)}
-                        className="text-gr-ink-soft hover:text-gr-down transition-colors p-1"
-                        title="Hapus dari Perbandingan"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
 
-                    {/* Commodity Info */}
-                    <div className="bg-white border border-gr-line/60 rounded-xs p-3 space-y-2 text-[10px]">
-                      <div className="flex justify-between items-center">
-                        <span className="font-sans text-xs font-semibold text-gr-ink-soft">Komoditas</span>
-                        <span className="font-display text-xs font-bold text-gr-board bg-gr-board/10 px-2 py-0.5 rounded-sm capitalize">
-                          {demand.commodity_name}
-                        </span>
+                      {/* Commodity Info */}
+                      <div className="bg-[#FAF9F5] border border-dashed border-gr-line p-3 space-y-2 text-[10px]">
+                        <div className="flex justify-between items-center gap-2">
+                          <span className="font-mono text-[9px] uppercase tracking-wider text-gr-ink-soft/70 font-bold">Komoditas</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-[8px] uppercase tracking-wider text-gr-board bg-gr-board/10 px-1.5 py-0.5 font-bold border border-gr-board/20">
+                              {demand.category || 'Hasil Panen'}
+                            </span>
+                            <span className="font-display text-xs font-bold text-gr-ink capitalize">
+                              {demand.commodity_name}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="h-px bg-gr-line/50 border-t border-dashed border-gr-line" />
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <span className="block font-mono text-[7px] uppercase tracking-widest text-gr-ink-soft/60 font-bold">Penawaran</span>
+                            <span className="font-mono font-bold text-gr-ink text-[11px]">
+                              Rp {Math.round(demand.price_per_kg).toLocaleString('id-ID')}<span className="text-[7px] font-normal text-gr-ink-soft">/kg</span>
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block font-mono text-[7px] uppercase tracking-widest text-gr-ink-soft/60 font-bold">Sisa Kebutuhan</span>
+                            <span className="font-mono font-bold text-gr-board text-[11px]">
+                              {remainingQty.toLocaleString('id-ID')} KG
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="block font-mono text-[7px] uppercase tracking-widest text-gr-ink-soft/60 font-bold">Tenggat</span>
+                            <span className="font-mono font-bold text-gr-ink text-[11px]">
+                              {new Date(demand.deadline).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                            </span>
+                          </div>
+                        </div>
+
+                        {parsedQty > 0 && (
+                          <div className="pt-2 border-t border-dashed border-gr-line/60 flex justify-between items-center text-[10px]">
+                            <span className="font-mono text-[8px] uppercase tracking-widest text-gr-ink-soft/70 font-bold">Estimasi Pendapatan:</span>
+                            <span className="font-mono font-bold text-gr-up text-xs">
+                              Rp {estimatedTotal.toLocaleString('id-ID')}
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      <div className="h-px bg-gr-line/40" />
-                      <div className="grid grid-cols-3 gap-2">
+
+                      {errorStr && (
+                        <div className="p-2 bg-red-50 text-red-900 border border-red-200 text-[10px] flex items-center gap-1.5 font-sans font-medium">
+                          <span>{errorStr}</span>
+                        </div>
+                      )}
+
+                      {/* Input Form */}
+                      <form onSubmit={(e) => handleIndividualCommitSubmit(demand, e)} className="space-y-3">
                         <div>
-                          <span className="block font-mono text-[7px] uppercase tracking-widest text-gr-ink-soft/50 font-bold">Penawaran</span>
-                          <span className="font-mono font-bold text-gr-ink">
-                            Rp {demand.price_per_kg.toLocaleString('id-ID')}<span className="text-[7px] font-normal text-gr-ink-soft/60">/kg</span>
-                          </span>
+                          <label className="block font-mono text-[8px] uppercase tracking-widest text-gr-ink font-bold mb-1">
+                            Jumlah Pasokan (KG)
+                          </label>
+                          <div className="relative flex items-center">
+                            <input
+                              type="number"
+                              step="any"
+                              min="0.1"
+                              placeholder="Contoh: 50"
+                              value={qtyStr}
+                              onChange={(e) => setCommitQuantities((prev) => ({ ...prev, [demand.id]: e.target.value }))}
+                              className="w-full border border-gr-line bg-white/90 px-3 py-2 text-xs font-mono font-bold text-gr-ink focus:outline-none focus:border-gr-board rounded-none placeholder:font-sans placeholder:text-gr-ink-soft/40"
+                            />
+                            <span className="absolute right-3 font-mono text-[10px] font-bold text-gr-ink-soft/50">
+                              KG
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="block font-mono text-[7px] uppercase tracking-widest text-gr-ink-soft/50 font-bold">Sisa Kebutuhan</span>
-                          <span className="font-mono font-bold text-gr-ink">
-                            {remainingQty.toLocaleString('id-ID')} KG
-                          </span>
+
+                        {/* Quick Presets */}
+                        <div className="space-y-1">
+                          <div className="flex gap-1.5">
+                            {[
+                              { label: '25%', val: Math.max(1, Math.round(remainingQty * 0.25)) },
+                              { label: '50%', val: Math.max(1, Math.round(remainingQty * 0.5)) },
+                              { label: 'Semua', val: remainingQty }
+                            ].map((preset, pIdx) => {
+                              if (preset.val <= 0) return null;
+                              const isSelected = qtyStr === preset.val.toString();
+                              return (
+                                <button
+                                  key={pIdx}
+                                  type="button"
+                                  onClick={() => setCommitQuantities((prev) => ({ ...prev, [demand.id]: preset.val.toString() }))}
+                                  className={cn(
+                                    "flex-1 font-mono text-[9px] font-bold py-1 px-1.5 rounded-none border transition-all cursor-pointer",
+                                    isSelected
+                                      ? "bg-gr-board text-gr-chalk border-gr-board"
+                                      : "bg-white hover:bg-gr-board/10 hover:border-gr-board/40 text-gr-ink-soft hover:text-gr-board border-gr-line"
+                                  )}
+                                >
+                                  {preset.label} ({preset.val} kg)
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <span className="block font-mono text-[7px] uppercase tracking-widest text-gr-ink-soft/50 font-bold">Tenggat</span>
-                          <span className="font-mono font-bold text-gr-ink">
-                            {new Date(demand.deadline).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
-                          </span>
+
+                        <div className="pt-2 border-t border-dashed border-gr-line">
+                          <button
+                            type="submit"
+                            disabled={isSubmitting}
+                            className="w-full bg-gr-board hover:bg-gr-board/90 text-gr-chalk border border-gr-ink/40 font-mono text-[10px] font-bold uppercase tracking-widest py-2.5 rounded-none transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 active:translate-x-px active:translate-y-px"
+                          >
+                            {isSubmitting ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <>
+                                <Check size={13} className="stroke-[2.5]" />
+                                Kirim Pasokan
+                              </>
+                            )}
+                          </button>
                         </div>
-                      </div>
+                      </form>
                     </div>
-
-                    {errorStr && (
-                      <div className="rounded-sm bg-[#FFF5F5] p-2 text-[10px] text-gr-down border border-gr-down/20 font-sans font-medium">
-                        {errorStr}
-                      </div>
-                    )}
-
-                    {/* Input Form */}
-                    <form onSubmit={(e) => handleIndividualCommitSubmit(demand, e)} className="space-y-3">
-                      <div>
-                        <label className="block font-mono text-[7px] uppercase tracking-widest text-gr-ink-soft font-bold mb-1">
-                          Jumlah Pasokan (KG)
-                        </label>
-                        <div className="relative flex items-center">
-                          <input
-                            type="number"
-                            step="any"
-                            min="0.1"
-                            placeholder="Contoh: 50"
-                            value={qtyStr}
-                            onChange={(e) => setCommitQuantities((prev) => ({ ...prev, [demand.id]: e.target.value }))}
-                            className="w-full bg-white border border-gr-line hover:border-gr-ink-soft/35 focus:border-gr-board/50 text-gr-ink pl-3 pr-10 py-2 rounded-xs font-mono text-xs font-bold focus:outline-none transition-all placeholder:text-gr-ink-soft/40"
-                          />
-                          <span className="absolute right-3 font-mono text-[10px] font-bold text-gr-ink-soft/40">
-                            KG
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Quick Presets */}
-                      <div className="space-y-1">
-                        <div className="flex gap-1.5">
-                          {[
-                            { label: '25%', val: Math.round(remainingQty * 0.25) },
-                            { label: '50%', val: Math.round(remainingQty * 0.5) },
-                            { label: 'Semua', val: remainingQty }
-                          ].map((preset, pIdx) => {
-                            if (preset.val <= 0) return null;
-                            return (
-                              <button
-                                key={pIdx}
-                                type="button"
-                                onClick={() => setCommitQuantities((prev) => ({ ...prev, [demand.id]: preset.val.toString() }))}
-                                className="flex-1 bg-white hover:bg-gr-board/10 hover:text-gr-board hover:border-gr-board/40 border border-gr-line text-gr-ink-soft font-mono text-[9px] font-bold py-1 rounded-xs transition-all cursor-pointer"
-                              >
-                                {preset.label} ({preset.val} kg)
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="pt-2 border-t border-gr-line/40">
-                        <button
-                          type="submit"
-                          disabled={isSubmitting}
-                          className="w-full bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-sans text-xs font-bold uppercase tracking-wider py-2 rounded-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer  font-extrabold"
-                        >
-                          {isSubmitting ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : (
-                            <>
-                              <Check size={12} className="stroke-[2.5]" />
-                              Kirim Pasokan
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>,
           document.body
+        )}
+
+        {/* ── Confirmation Modal for Farmer Commit */}
+        {pendingCommit && (
+          <ConfirmModal
+            isOpen={!!pendingCommit}
+            onClose={() => !submittingModal && setPendingCommit(null)}
+            onConfirm={handleExecuteCommit}
+            title="Konfirmasi Pasokan"
+            confirmText="Kirim Pasokan"
+            cancelText="Batal"
+            variant="info"
+            isLoading={submittingModal}
+            description={
+              <div className="space-y-3">
+                <p className="font-sans text-xs text-gr-ink-soft leading-relaxed">
+                  Apakah Anda yakin ingin mengirim komitmen pasokan komoditas ini kepada pembeli?
+                </p>
+                <div className="bg-[#FAF9F5] border border-dashed border-gr-line p-3.5 space-y-2 rounded-none font-mono text-[10px]">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gr-ink-soft/60">PEMOHON:</span>
+                    <span className="font-bold text-gr-ink uppercase">{pendingCommit.demand.buyer_name || 'Pembeli'}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gr-ink-soft/60">KOMODITAS:</span>
+                    <span className="font-bold text-gr-ink uppercase">{pendingCommit.demand.commodity_name}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gr-ink-soft/60">VOLUME PASOKAN:</span>
+                    <span className="font-bold text-gr-board">{pendingCommit.quantity} KG</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gr-ink-soft/60">HARGA PENAWARAN:</span>
+                    <span className="font-bold text-gr-ink">Rp {Math.round(pendingCommit.demand.price_per_kg).toLocaleString('id-ID')} / KG</span>
+                  </div>
+                  <div className="border-t border-dashed border-gr-line/50 pt-2 flex justify-between items-center text-xs">
+                    <span className="text-gr-ink font-bold">TOTAL ESTIMASI:</span>
+                    <span className="font-bold text-gr-board font-mono">
+                      Rp {Math.round(pendingCommit.demand.price_per_kg * pendingCommit.quantity).toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                </div>
+                <p className="font-sans text-[10px] text-gr-ink-soft/70 leading-normal">
+                  * Komitmen Anda akan langsung diberitahukan kepada pemohon untuk pencocokan pesanan dan pembayaran rekening bersama (escrow).
+                </p>
+              </div>
+            }
+          />
         )}
     </main>
   );

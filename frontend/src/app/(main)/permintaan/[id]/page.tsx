@@ -123,6 +123,7 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
   const [commitQty, setCommitQty] = useState('');
   const [submittingCommit, setSubmittingCommit] = useState(false);
   const [commitSuccess, setCommitSuccess] = useState(false);
+  const [confirmCommitOpen, setConfirmCommitOpen] = useState(false);
 
   // Escrow & Matching states
   const [matching, setMatching] = useState<string | null>(null);
@@ -306,7 +307,7 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
     };
   }, [id, loading, error]);
 
-  const handleCommitSubmit = async (e: React.FormEvent) => {
+  const handleCommitSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setCommitSuccess(false);
     setError('');
@@ -323,14 +324,20 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
       return;
     }
 
+    setConfirmCommitOpen(true);
+  };
+
+  const handleExecuteCommit = async () => {
+    setConfirmCommitOpen(false);
+    const qty = parseFloat(commitQty);
+    if (isNaN(qty) || qty <= 0) return;
+
     setSubmittingCommit(true);
     try {
       await demandRequestsApi.commitSupply(id, qty);
       setCommitSuccess(true);
       setCommitQty('');
-      // Detail request will also update locally via WS, but let's re-fetch to update commitments list
-      const updatedData = await demandRequestsApi.getDemandRequestById(id);
-      setRequest(updatedData);
+      router.push('/pesanan?tab=demands');
     } catch (err: any) {
       setError(err.message || 'Gagal mengirimkan komitmen supply');
     } finally {
@@ -1172,53 +1179,109 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
 
             {/* Farmer Commitment Action Panel */}
             {user && user.role === 'PETANI' && request.status === 'TERBUKA' && (
-              <div className="rounded-sm border border-gr-line bg-white/80 p-6 overflow-hidden">
-                <h3 className="font-display text-xl font-semibold text-gr-ink mb-2 flex items-center gap-2">
-                  <ClipboardCheck size={18} className="text-gr-board" />
-                  Bantu Penuhi
-                </h3>
-                <p className="font-sans text-xs text-gr-ink-soft mb-4 leading-relaxed">
-                  Apakah Anda memiliki produk ini atau bersedia menyediakannya? Masukkan jumlah KG yang sanggup Anda pasok.
+              <div className="rounded-none border border-gr-line bg-white/80 p-5 space-y-4 shadow-xs">
+                {/* Header Ticket Style */}
+                <div className="flex flex-col gap-1 pb-3 border-b border-dashed border-gr-line">
+                  <div className="flex justify-between items-center font-mono text-[9px] font-bold tracking-widest">
+                    <span className="text-gr-board flex items-center gap-1">
+                      <ClipboardCheck size={12} className="stroke-[2.5]" />
+                      // KOMITMEN PASOKAN
+                    </span>
+                    <span className="text-gr-ink-soft/50 font-medium">
+                      SISA {remainingKg} KG
+                    </span>
+                  </div>
+                  <h3 className="font-display text-xl font-bold text-gr-ink leading-tight mt-0.5">
+                    Bantu Penuhi Pasokan
+                  </h3>
+                </div>
+
+                <p className="font-sans text-xs text-gr-ink-soft leading-relaxed">
+                  Apakah Anda memiliki produk ini atau sanggup menyediakannya? Masukkan kuantitas pasokan yang siap Anda kirimkan.
                 </p>
 
                 {commitSuccess && (
-                  <div className="mb-4 rounded-sm bg-gr-up/10 p-3 text-xs text-gr-up border border-gr-up/30 flex items-center gap-2 font-mono">
+                  <div className="rounded-none bg-gr-up/10 p-3 text-xs text-gr-up border border-gr-up/30 flex items-center gap-2 font-mono">
                     <CheckCircle size={14} className="shrink-0" />
-                    <span>Komitmen berhasil dikirim!</span>
+                    <span>Komitmen berhasil dikirim ke pemohon!</span>
                   </div>
                 )}
 
                 {error && (
-                  <div className="mb-4 rounded-sm bg-gr-down/10 p-3 text-xs text-gr-down border border-gr-down/30 font-mono">
+                  <div className="rounded-none bg-gr-down/10 p-3 text-xs text-gr-down border border-gr-down/30 font-mono">
                     {error}
                   </div>
                 )}
 
-                <form onSubmit={handleCommitSubmit} className="space-y-4">
+                <form onSubmit={handleCommitSubmit} className="space-y-3.5">
                   <div>
-                    <label className="block font-mono text-[9px] font-bold uppercase tracking-wider text-gr-ink-soft/80 mb-1.5">
-                      Jumlah Supply (KG)
+                    <label className="block font-mono text-[8px] font-bold uppercase tracking-widest text-gr-ink mb-1">
+                      Jumlah Pasokan (KG)
                     </label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.1"
-                      placeholder="Masukkan jumlah kg..."
-                      value={commitQty}
-                      onChange={(e) => setCommitQty(e.target.value)}
-                      className="w-full bg-white/70 border border-gr-line focus:border-gr-board text-gr-ink px-3 py-2.5 rounded-sm font-sans text-xs focus:outline-none transition-all placeholder:text-gr-ink-soft/40 "
-                    />
+                    <div className="relative flex items-center">
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.1"
+                        placeholder="Contoh: 50"
+                        value={commitQty}
+                        onChange={(e) => setCommitQty(e.target.value)}
+                        className="w-full border border-gr-line bg-white/90 px-3 py-2 text-xs font-mono font-bold text-gr-ink focus:outline-none focus:border-gr-board rounded-none placeholder:font-sans placeholder:text-gr-ink-soft/40"
+                      />
+                      <span className="absolute right-3 font-mono text-[10px] font-bold text-gr-ink-soft/50">
+                        KG
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Quick Presets */}
+                  {remainingKg > 0 && (
+                    <div className="flex gap-1.5">
+                      {[
+                        { label: '25%', val: Math.max(1, Math.round(remainingKg * 0.25)) },
+                        { label: '50%', val: Math.max(1, Math.round(remainingKg * 0.5)) },
+                        { label: 'Semua', val: remainingKg }
+                      ].map((preset, pIdx) => {
+                        if (preset.val <= 0) return null;
+                        const isSelected = commitQty === preset.val.toString();
+                        return (
+                          <button
+                            key={pIdx}
+                            type="button"
+                            onClick={() => setCommitQty(preset.val.toString())}
+                            className={cn(
+                              "flex-1 font-mono text-[9px] font-bold py-1 px-1.5 rounded-none border transition-all cursor-pointer",
+                              isSelected
+                                ? "bg-gr-board text-gr-chalk border-gr-board"
+                                : "bg-white hover:bg-gr-board/10 hover:border-gr-board/40 text-gr-ink-soft hover:text-gr-board border-gr-line"
+                            )}
+                          >
+                            {preset.label} ({preset.val} kg)
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Live Estimated Revenue */}
+                  {parseFloat(commitQty) > 0 && (
+                    <div className="p-2.5 bg-[#FAF9F5] border border-dashed border-gr-line flex justify-between items-center text-[10px] font-mono">
+                      <span className="text-gr-ink-soft/70 uppercase tracking-wider font-bold">Total Estimasi:</span>
+                      <span className="font-bold text-gr-board text-xs">
+                        Rp {Math.round(parseFloat(commitQty) * (request.price_per_kg || 0)).toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  )}
 
                   <Button
                     type="submit"
                     disabled={submittingCommit}
-                    className="w-full bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-xs font-bold uppercase tracking-wider py-3 rounded-sm transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer "
+                    className="w-full bg-gr-board hover:bg-gr-board/90 text-gr-chalk border border-gr-ink/40 font-mono text-[10px] font-bold uppercase tracking-widest py-3 rounded-none transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2"
                   >
                     {submittingCommit ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
-                      'Kirim Komitmen'
+                      'Kirim Pasokan'
                     )}
                   </Button>
                 </form>
@@ -1441,6 +1504,53 @@ export default function DemandRequestDetailPage({ params }: { params: React.Usab
                   <span className="font-bold text-gr-text-primary">Rp {Math.round(confirmCancelTx.amount).toLocaleString('id-ID')}</span>
                 </div>
               </div>
+            </div>
+          }
+        />
+      )}
+
+      {confirmCommitOpen && (
+        <ConfirmModal
+          isOpen={confirmCommitOpen}
+          onClose={() => !submittingCommit && setConfirmCommitOpen(false)}
+          onConfirm={handleExecuteCommit}
+          title="Konfirmasi Pasokan"
+          confirmText="Kirim Pasokan"
+          cancelText="Batal"
+          variant="info"
+          isLoading={submittingCommit}
+          description={
+            <div className="space-y-3">
+              <p className="font-sans text-xs text-gr-ink-soft leading-relaxed">
+                Apakah Anda yakin ingin mengirim komitmen pasokan komoditas ini kepada pembeli?
+              </p>
+              <div className="bg-[#FAF9F5] border border-dashed border-gr-line p-3.5 space-y-2 rounded-none font-mono text-[10px]">
+                <div className="flex justify-between items-center">
+                  <span className="text-gr-ink-soft/60">PEMOHON:</span>
+                  <span className="font-bold text-gr-ink uppercase">{request.buyer_name || 'Pembeli'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gr-ink-soft/60">KOMODITAS:</span>
+                  <span className="font-bold text-gr-ink uppercase">{request.commodity_name}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gr-ink-soft/60">VOLUME PASOKAN:</span>
+                  <span className="font-bold text-gr-board">{commitQty} KG</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gr-ink-soft/60">HARGA PENAWARAN:</span>
+                  <span className="font-bold text-gr-ink">Rp {Math.round(request.price_per_kg).toLocaleString('id-ID')} / KG</span>
+                </div>
+                <div className="border-t border-dashed border-gr-line/50 pt-2 flex justify-between items-center text-xs">
+                  <span className="text-gr-ink font-bold">TOTAL ESTIMASI:</span>
+                  <span className="font-bold text-gr-board font-mono">
+                    Rp {Math.round((request.price_per_kg || 0) * (parseFloat(commitQty) || 0)).toLocaleString('id-ID')}
+                  </span>
+                </div>
+              </div>
+              <p className="font-sans text-[10px] text-gr-ink-soft/70 leading-normal">
+                * Komitmen Anda akan langsung diberitahukan kepada pemohon untuk pencocokan pesanan dan pembayaran rekening bersama (escrow).
+              </p>
             </div>
           }
         />

@@ -462,8 +462,7 @@ export const MapView: React.FC<MapViewProps> = ({
                     setActivePopup(null);
                     onCommitDemand?.(activePopup.data);
                   }}
-                  style={{ color: '#ffffff' }}
-                  className="w-full bg-[#e65100] hover:bg-[#c94000] text-white font-mono text font-bold uppercase tracking-widest py-1.5 rounded-sm transition-all text-center block cursor-pointer  font-extrabold"
+                  className="w-full bg-gr-board hover:bg-gr-board/90 text-gr-chalk font-mono text-[9px] font-bold uppercase tracking-widest py-1.5 rounded-none transition-all text-center block cursor-pointer"
                 >
                   Penuhi Pasokan
                 </button>
