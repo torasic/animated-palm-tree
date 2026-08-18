@@ -12,11 +12,12 @@ from app.schemas.demand_request import (
     DemandRequestDetailResponse,
     SupplyCommitmentSummary,
     DemandMatchCandidate,
-    DemandMatchRequest
+    DemandMatchRequest,
+    DemandFulfillmentUpdate
 )
 from app.services import auth_service
 from app.services.connection_manager import demand_manager
-from app.models.payment_transaction import DemandTransaction, PaymentStatus, EscrowStatus
+from app.models.payment_transaction import DemandTransaction, PaymentStatus, EscrowStatus, DemandFulfillmentStatus
 from app.models.product import Product, ProductStatus
 from app.services.escrow_service import escrow_service
 import logging
@@ -299,6 +300,8 @@ async def list_committed_demand_requests(
                 "amount": dt.amount,
                 "payment_status": dt.payment_status.value if dt.payment_status else None,
                 "escrow_status": dt.escrow_status.value if dt.escrow_status else None,
+                "fulfillment_status": dt.fulfillment_status or "DIPROSES",
+                "marked_ready_at": dt.marked_ready_at.isoformat() if dt.marked_ready_at else None,
                 "xendit_invoice_id": dt.xendit_invoice_id,
                 "xendit_invoice_url": dt.xendit_invoice_url,
                 "xendit_external_id": dt.xendit_external_id,
@@ -559,6 +562,8 @@ async def get_demand_request_detail(
             "amount": dt.amount,
             "payment_status": dt.payment_status.value if dt.payment_status else None,
             "escrow_status": dt.escrow_status.value if dt.escrow_status else None,
+            "fulfillment_status": dt.fulfillment_status or "DIPROSES",
+            "marked_ready_at": dt.marked_ready_at.isoformat() if dt.marked_ready_at else None,
             "xendit_invoice_id": dt.xendit_invoice_id,
             "xendit_invoice_url": dt.xendit_invoice_url,
             "xendit_external_id": dt.xendit_external_id,
@@ -1036,6 +1041,121 @@ async def disburse_demand_escrow(
     return {"status": "success"}
 
 
+@router.patch("/{id}/transactions/{transaction_id}/fulfillment-status")
+async def update_demand_fulfillment_status(
+    id: uuid.UUID,
+    transaction_id: uuid.UUID,
+    body: DemandFulfillmentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user)
+):
+    """
+    Farmer confirms product readiness (SIAP_DIANTAR or SIAP_DIAMBIL) after payment is completed.
+    """
+    if current_user.role != UserRole.PETANI:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Hanya petani/peternak penyedia barang yang dapat mengonfirmasi kesiapan produk"
+        )
+
+    stmt_dt = select(DemandTransaction).where(
+        DemandTransaction.id == transaction_id,
+        DemandTransaction.demand_request_id == id
+    )
+    res_dt = await db.execute(stmt_dt)
+    dt = res_dt.scalar_one_or_none()
+    if not dt:
+        raise HTTPException(status_code=404, detail="Transaksi permintaan tidak ditemukan")
+
+    if dt.seller_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Hanya petani penyedia yang dapat mengonfirmasi kesiapan produk"
+        )
+
+    if dt.payment_status != PaymentStatus.PAID:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Permintaan belum dibayar oleh pembeli. Konfirmasi kesiapan hanya dapat dilakukan setelah pembayaran lunas."
+        )
+
+    if (
+        (dt.escrow_status and str(dt.escrow_status.value if hasattr(dt.escrow_status, 'value') else dt.escrow_status).lower() == "released")
+        or (dt.fulfillment_status and str(dt.fulfillment_status).upper() == "SELESAI")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Transaksi sudah selesai dan dana telah dicairkan. Status kesiapan tidak dapat diubah lagi."
+        )
+
+    norm_status = body.fulfillment_status.upper()
+    if norm_status not in ("SIAP_DIANTAR", "SIAP_DIAMBIL", "DIKIRIM"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Status kesiapan harus berupa SIAP_DIANTAR atau SIAP_DIAMBIL"
+        )
+    if norm_status == "DIKIRIM":
+        norm_status = "SIAP_DIANTAR"
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    dt.fulfillment_status = norm_status
+    dt.marked_ready_at = now
+
+    db.add(dt)
+    await db.commit()
+    await db.refresh(dt)
+
+    status_msg = "siap diantar oleh petani" if norm_status == "SIAP_DIANTAR" else "siap diambil di lokasi petani"
+    await demand_manager.broadcast(
+        str(id),
+        {
+            "demand_request_id": str(id),
+            "transaction_id": str(dt.id),
+            "payment_status": dt.payment_status.value,
+            "escrow_status": dt.escrow_status.value,
+            "fulfillment_status": dt.fulfillment_status,
+            "marked_ready_at": dt.marked_ready_at.isoformat() if dt.marked_ready_at else None,
+            "message": f"Petani telah mengonfirmasi bahwa produk {status_msg}.",
+            "timestamp": now.isoformat()
+        }
+    )
+
+    return {
+        "status": "success",
+        "id": str(dt.id),
+        "transaction_id": str(dt.id),
+        "demand_request_id": str(dt.demand_request_id),
+        "fulfillment_status": dt.fulfillment_status,
+        "marked_ready_at": dt.marked_ready_at.isoformat() if dt.marked_ready_at else None,
+        "payment_status": dt.payment_status.value if dt.payment_status else None,
+        "escrow_status": dt.escrow_status.value if dt.escrow_status else None
+    }
+
+
+@router.patch("/{id}/fulfillment-status")
+async def update_demand_fulfillment_status_fallback(
+    id: uuid.UUID,
+    body: DemandFulfillmentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user)
+):
+    """
+    Shortcut endpoint to update fulfillment status for the farmer's transaction on this demand request.
+    """
+    stmt_dt = select(DemandTransaction).where(
+        DemandTransaction.demand_request_id == id,
+        DemandTransaction.seller_id == current_user.id
+    ).order_by(DemandTransaction.created_at.desc())
+    res_dt = await db.execute(stmt_dt)
+    dt = res_dt.scalars().first()
+    if not dt:
+        raise HTTPException(status_code=404, detail="Transaksi permintaan tidak ditemukan untuk akun Anda")
+
+    return await update_demand_fulfillment_status(id=id, transaction_id=dt.id, body=body, db=db, current_user=current_user)
+
+
+
 @router.post("/{id}/transactions/{transaction_id}/cancel")
 async def cancel_demand_transaction(
     id: uuid.UUID,
@@ -1197,5 +1317,7 @@ async def cancel_demand_request(
         "buyer_rating_avg": current_user.buyer_rating_avg,
         "buyer_rating_count": current_user.buyer_rating_count
     }
+
+
 
 

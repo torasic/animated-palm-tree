@@ -83,3 +83,8 @@ class DemandMatchRequest(BaseModel):
     product_id: UUID
     quantity_kg: Optional[float] = None
 
+
+class DemandFulfillmentUpdate(BaseModel):
+    fulfillment_status: str = Field(..., description="Status kesiapan produk: SIAP_DIANTAR atau SIAP_DIAMBIL")
+
+

@@ -371,6 +371,7 @@ class EscrowService:
                 raise HTTPException(status_code=404, detail="Petani/peternak penjual tidak ditemukan")
 
             dt.escrow_status = EscrowStatus.RELEASED
+            dt.fulfillment_status = "SELESAI"
             dt.confirmed_received_at = now
             dt.released_at = now
 
