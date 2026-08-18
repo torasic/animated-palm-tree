@@ -38,6 +38,23 @@ class EscrowStatus(str, enum.Enum):
                     return member
         return None
 
+class DemandFulfillmentStatus(str, enum.Enum):
+    DIPROSES = "DIPROSES"
+    SIAP_DIANTAR = "SIAP_DIANTAR"
+    SIAP_DIAMBIL = "SIAP_DIAMBIL"
+    SELESAI = "SELESAI"
+
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            val = value.upper()
+            if val == "DIKIRIM":
+                return cls.SIAP_DIANTAR
+            for member in cls:
+                if member.value == val or member.name == val:
+                    return member
+        return None
+
 class DemandTransaction(Base):
     __tablename__ = "demand_transactions"
 
@@ -51,12 +68,14 @@ class DemandTransaction(Base):
 
     payment_status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus), default=PaymentStatus.PENDING)
     escrow_status: Mapped[EscrowStatus] = mapped_column(Enum(EscrowStatus), default=EscrowStatus.NOT_STARTED)
+    fulfillment_status: Mapped[Optional[str]] = mapped_column(String(50), default="DIPROSES", nullable=True)
 
     xendit_invoice_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     xendit_invoice_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     xendit_external_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
 
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    marked_ready_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     confirmed_received_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     released_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     disbursement_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
