@@ -312,7 +312,7 @@ async def update_product(
         # Regenerate semantic embedding
         embedding_text = f"{new_name} {new_category}"
         try:
-            product.embedding = await embedding_service.embedding_service.generate_embedding(embedding_text)
+            product.embedding = await embedding_service.generate_embedding(embedding_text)
         except Exception as e:
             logger.warning(f"Failed to generate embedding on update: {e}")
             
