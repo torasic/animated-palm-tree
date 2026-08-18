@@ -196,6 +196,9 @@ async def list_committed_demand_requests(
     from sqlalchemy.orm import selectinload, joinedload
     
     if current_user.role == UserRole.PEMBELI:
+        latest_act = select(func.max(SupplyCommitment.committed_at)).where(
+            SupplyCommitment.demand_request_id == DemandRequest.id
+        ).scalar_subquery()
         stmt = (
             select(DemandRequest)
             .options(
@@ -211,9 +214,13 @@ async def list_committed_demand_requests(
                     ).exists()
                 )
             )
-            .order_by(DemandRequest.created_at.desc())
+            .order_by(func.coalesce(latest_act, DemandRequest.created_at).desc())
         )
     elif current_user.role == UserRole.PETANI:
+        latest_act = select(func.max(SupplyCommitment.committed_at)).where(
+            SupplyCommitment.demand_request_id == DemandRequest.id,
+            SupplyCommitment.petani_id == current_user.id
+        ).scalar_subquery()
         stmt = (
             select(DemandRequest)
             .options(
@@ -229,7 +236,7 @@ async def list_committed_demand_requests(
                     ).exists()
                 )
             )
-            .order_by(DemandRequest.created_at.desc())
+            .order_by(func.coalesce(latest_act, DemandRequest.created_at).desc())
         )
     else:
         raise HTTPException(
@@ -248,14 +255,15 @@ async def list_committed_demand_requests(
             stmt_txs = select(DemandTransaction).options(joinedload(DemandTransaction.seller)).where(
                 DemandTransaction.demand_request_id.in_(record_ids),
                 DemandTransaction.seller_id == current_user.id
-            )
+            ).order_by(DemandTransaction.created_at.desc())
         else:
             stmt_txs = select(DemandTransaction).options(joinedload(DemandTransaction.seller)).where(
                 DemandTransaction.demand_request_id.in_(record_ids)
-            )
+            ).order_by(DemandTransaction.created_at.desc())
         res_txs = await db.execute(stmt_txs)
         for dt in res_txs.scalars().all():
-            dt_map[dt.demand_request_id] = dt
+            if dt.demand_request_id not in dt_map:
+                dt_map[dt.demand_request_id] = dt
 
     # Pre-fetch all ratings submitted by this user for DEMAND_FULFILLMENT to avoid N+1 query
     rated_demand_ids = set()
