@@ -109,6 +109,17 @@ export const demandRequestsApi = {
     });
     return response.json();
   },
+
+  updateFulfillmentStatus: async (id: string, status: 'SIAP_DIANTAR' | 'SIAP_DIAMBIL', transactionId?: string) => {
+    const url = transactionId
+      ? `/demand-requests/${id}/transactions/${transactionId}/fulfillment-status`
+      : `/demand-requests/${id}/fulfillment-status`;
+    const response = await apiClient(url, {
+      method: 'PATCH',
+      body: JSON.stringify({ fulfillment_status: status }),
+    });
+    return response.json();
+  },
 };
 
 // WebSocket Hook for real-time status updates
@@ -121,6 +132,9 @@ export function useDemandSocket(id: string | null) {
     num_petani_committed?: number;
     payment_status?: string;
     escrow_status?: string;
+    fulfillment_status?: string;
+    marked_ready_at?: string;
+    message?: string;
   } | null>(null);
 
   useEffect(() => {
